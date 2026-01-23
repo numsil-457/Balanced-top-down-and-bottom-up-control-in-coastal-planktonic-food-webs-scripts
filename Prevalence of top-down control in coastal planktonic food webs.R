@@ -13,6 +13,12 @@ library(gridExtra)
 #library(lme4)     # Package for GLMMs
 source('functions_main.R')
 
+#### Pull the datasets in Git repositories
+system("git clean -f") # Remove untracked files from the repository (Clean up before pulling the data)
+# Pull the data from another repository
+system("git pull https://github.com/numsil-457/Prevalence-of-top-down-control-in-coastal-planktonic-food-webs-datasets.git --allow-unrelated-histories")
+system("git reset HEAD~") # Remove any commits to avoid pushing by mistake
+
 #### Phytoplankton data
 stationf = read.csv("Phytoplankton_NLWKN.csv")
 
