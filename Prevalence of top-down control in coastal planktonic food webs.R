@@ -9,6 +9,7 @@ library(plyr)      # To work with dataframes
 library(lubridate) # To manage the dates
 library(stats)
 library(gridExtra)
+library(shape)
 library(rvest)     # Read dataframes from webpages
 #library(lme4)     # Package for GLMMs
 source('functions_main.R')
@@ -109,53 +110,6 @@ zoo.day = ddply( zoo.day, .(Date), summarize,
                  sdesd = sd( log(esd), na.rm = T ) ) # Mean Dry Weight per day
 zoo.day$yr = year(zoo.day$Date) ; zoo.day$mth = month(zoo.day$Date)
 ## ----
-
-## Checking the variability between stations in the phytoplankton series
-un.dates = unique(stationf$USI) # Sampling each station (and day) once (to extract the total biomass on that day/station)
-
-statbio = ddply(stationf, .(USI), 
-                summarize, biovol.tot = sum(biovolume, na.rm = T))
-station = merge(statbio, stationf, by="USI")
-station$relbiov = station$biovolume / station$biovol.tot # Weight for mean esd
-
-statday = ddply( station, .(USI, date, stationID), summarize,
-                 usisize = sum( esd * relbiov, na.rm = T),
-                 usibioc = sum( bioC, na.rm = T) ) #  C/ESD per USI
-
-# Checking a moving average on one week
-statday$date = ymd( statday$date )
-statday$mth = month( statday$date )
-
-# Taking out the data in winter (not used in the analysis)
-statday = statday[ which(statday$mth >= 3 & statday$mth <= 10), ]
-
-spatvar = function( ind = unique(statday$stationID) ){
-  statday = statday[ which(statday$stationID %in% ind), ]
-  i = min(statday$date)
-  rm.stat = data.frame()
-  while(i < max(statday$date) ){
-    ind = which( statday$date >= i & statday$date < i + days(7) ) # one week moving average
-    
-    rm.ind = data.frame( date = i + days(3),
-                         Cl =  mean( log(statday$usibioc[ind] +1), na.rm = T),
-                         C =  mean( statday$usibioc[ind], na.rm = T),
-                         sdCl =  sd( log(statday$usibioc[ind] +1), na.rm = T),
-                         sdC =  sd( statday$usibioc[ind], na.rm = T),
-                         n = length( ind ) )
-    rm.stat = rbind( rm.stat, rm.ind )
-    i = i + days(7)
-  }
-  
-  rm.stat = rm.stat[ -which( is.na( rm.stat$sdCl ) ), ]
-  dspat = density( rm.stat$sdCl / rm.stat$Cl, bw="nrd0", kernel = "gaussian" )
-  
-  x11()
-  plot( dspat$x, dspat$y, type = "l", lwd = 2, xaxs = "i", yaxs = "i",
-        las = 1, cex.axis = 1.4,
-        ylab = "Density", xlab = "CV of log phytoplankton C (1 week average)", cex.lab = 1.4)
-}
-spatvar()
-## 
 
 #### Checking the Herring Larvae feeding range using the literature ----
 
@@ -455,7 +409,7 @@ zoocm$date = ymd(paste(zoocm$yr, "-", zoocm$mth, "-15", sep=""))
 #zoohlm$date = ymd(paste(zoohlm$yr, "-", zoohlm$mth, "-15", sep=""))
 ## ----
 
-#### Defining the blooming seasons according to the month with max temperature ----
+#### Defining the blooming seasons according to July ----
 springVaut.temp = function( season.f, t.series ){
   for( iy in unique( season.f$yr) ){
     
@@ -465,9 +419,9 @@ springVaut.temp = function( season.f, t.series ){
     max.t = ti$mth[ which.max(ti$dmn) ] # <= Spring ; > Autumn
     # The definition is when the bloom starts
     
-    if( length(max.t) == 0 ){
-      max.t = 7 # t.clim
-    } # If no temperature data available, use the mean max month as a proxy
+    # if( length(max.t) == 0 ){
+    #   max.t = 7 # t.clim
+    # } # If no temperature data available, use the mean max month as a proxy
     max.t = 7 # t.clim
     
     day.diff = day( days(seasi$date[ -1 ]) ) - day( days(seasi$date[ -length(seasi$date) ]) ) 
@@ -727,12 +681,102 @@ mtext( side = 2, expression( "Carn., mg.m"^-3 ),
 text( x = 6, y = 1.8, "Nutrient", cex = 1.5 )
 text( x = 7, y = 6.5, "Phytoplankton", cex = 1.5 )
 text( x = 6.5, y = 11, "Dinoflagellates", cex = 1.5 )
-text( x = 6.5, y = 15.4, "Zooplankton", cex = 1.5 )
+text( x = 8, y = 15, "Zooplankton", cex = 1.5 )
+text( x = 10, y = 18.3, "Zooplankton", cex = 1.5 )
 
 col.sp = rgb(0.2, 0.8, 0.1)
 col.sw = rgb(0.8, 0.6, 0.4)
 text( x = 4.5, y = 19, "Spring", col = adjustcolor(col.sp, r=0.8, g=0.8, b=0.8, alpha.f=5), cex = 1.5, xpd = T )
 text( x = 7.6, y = 19, "Summer", col = adjustcolor(col.sw, r=0.8, g=0.8, b=0.8, alpha.f=5), cex = 1.5, xpd = T )
+#### ----
+
+#### Supplementary - error bars of climatologies for nutrients and plankton ----
+plot.error.bars = function(mean.x.dt, qt.y.min, qt.y.max, log=F){
+  
+  col.error = rgb(0.5, 0.5, 0.5, alpha = 0.5)
+  
+  # Clean the vectors from NAs
+  qt.y.min[ is.na(qt.y.min) | is.nan(qt.y.min) ] = 0
+  qt.y.max[ is.na(qt.y.max) | is.nan(qt.y.max) ] = 0
+  
+  for(i in 1:length(mean.x.dt)){
+    sd.vec.y = c( qt.y.min[i], qt.y.max[i] ) # Plot the Qa - Qb
+    
+    if(log){ # Put in log scale, if necessary
+      sd.vec.x = log(sd.vec.x)
+      sd.vec.y = log(sd.vec.y)
+      mean.x.dt[i] = log(mean.x.dt[i])
+      mean.y.dt[i] = log(mean.y.dt[i])
+    }
+    # Plot the error bars
+    Arrows(mean.x.dt[i], sd.vec.y[1], mean.x.dt[i], sd.vec.y[2], lty = 1, col = col.error,
+           lwd = 1, arr.type = "T", code = 3, arr.length = 0.2)
+  }
+}
+
+plot.clim.error = function(mthl, mean.vec, qt.min, qt.max, span=0.2, colo='gray40', log=''){
+  y.lim=c(min(qt.min), max(qt.max))
+  
+  matplot( x= c(0, 1), y = c(0, 1), xlim = c(1, 12), ylim = y.lim, 
+           type = "n", xlab = "", ylab = "", axes = F, log=log )
+  
+  axis( 1, at = 0.5:12.5, labels = F, cex.axis = 1.5, lwd=1 )
+  axis( 1, at = 1:12, labels = mth.lab, cex.axis = 1.5, tck=F )
+  
+  plot.error.bars(mthl, qt.min, qt.max)
+  smooth.lines( mthl, mean.vec, colo = colo, span = span )
+  axis( at=pretty(y.lim), side = 2, cex.axis = 1.5, las = 1 )
+}
+
+x11(height = 12, width = 12)
+par( mfrow=c(3,3), mar = c( 2.5, 6, 1, 0 ), cex=1 )
+
+# Small zooplankton
+plot.clim.error(zoos.clim$mth, zoos.clim$dw, zoos.clim$dw.qt10, zoos.clim$dw.qt90, colo='orange', span=0.3, log='y')
+axis(2, at=5, las=1, cex.axis=1.5 )
+mtext( side = 2, expression( "Small zooplankton, mg.m"^-3 ), line = 3, cex = 1.5, col = "orange" )
+
+text(x=2.5, y=40, expression('Q'[90]), cex=1.5, col='gray40') # Add the legends for the Q10
+text(x=2.5, y=4.5, expression('Q'[10]), cex=1.5, col='gray40')
+
+# Large zooplankton
+plot.clim.error(zool.clim$mth, zool.clim$dw, zool.clim$dw.qt10, zool.clim$dw.qt90, colo='darkorange4', span=0.3, log='y')
+axis(2, at=1, las=1, cex.axis=1.5 )
+mtext( side = 2, expression( "Large zoo., mg.m"^-3 ), line = 3, cex = 1.5, col = "darkorange4" )
+
+# Carnivorous zooplankton
+plot.clim.error(zooc.clim$mth, zooc.clim$dw, zooc.clim$dw.qt10, zooc.clim$dw.qt90, colo='darkred', span=0.3, log='y')
+axis(2, at=c(1, 5), las=1, cex.axis=1.5 )
+mtext( side = 2, expression( "Carnivorous zoo., mg.m"^-3 ), line = 3, cex = 1.5, col = "darkred" )
+
+# Small phytoplankton
+plot.clim.error(phys.clim$mth, phys.clim$bmean, phys.clim$bioc.qt10, phys.clim$bioc.qt90, colo='chartreuse2', span=0.2, log='y')
+axis(2, at=c(1, 5, 10), las=1, cex.axis=1.5 )
+mtext( side = 2, expression( "Small, "*mu *"gC.l"^-1 ), line = 3, cex = 1.5, col = "chartreuse3" )
+
+# Large phytoplankton
+plot.clim.error(phyl.clim$mth, phyl.clim$bmean, phyl.clim$bioc.qt10, phyl.clim$bioc.qt90, colo='darkolivegreen', span=0.2, log='y')
+axis(2, at=c(1, 5, 10, 20, 50), las=1, cex.axis=1.5 )
+mtext( side = 2, expression( "Large, "*mu *"gC.l"^-1 ), line = 3, cex = 1.5, col = "darkolivegreen" )
+
+# Dinoflagellates
+plot.clim.error(dflsm.clim$mth, dflsm.clim$bmean, dflsm.clim$bioc.qt10, dflsm.clim$bioc.qt90, colo='black', span=0.2)
+mtext( side = 2, expression( "Dinoflagellates, "*mu *"gC.l"^-1 ), line = 3, cex = 1.5, col = "black" )
+
+# Nitrate
+plot.clim.error(n.clim$mth, n.clim$dmn, n.clim$dmn.qt10, n.clim$dmn.qt90, colo='darkblue', span=0.2)
+mtext( side = 2, expression( "NO"[3]^-"" *", "*mu *"mol.l"^-1 ), line = 3, cex = 1.5, col = "darkblue" )
+
+text(x=1.5, y=65, expression('Q'[90]), cex=1.5, col='gray40') # Add the legends for the Q10
+text(x=2.5, y=22, expression('Q'[10]), cex=1.5, col='gray40')
+
+# Phosphate
+plot.clim.error(p.clim$mth, p.clim$dmn, p.clim$dmn.qt10, p.clim$dmn.qt90, colo='dodgerblue', span=0.2)
+mtext( side = 2, expression( "PO"[4]^3^-"" *", "*mu *"mol.l"^-1 ), line = 3, cex = 1.5, col = "dodgerblue" )
+
+# Silicate
+plot.clim.error(si.clim$mth, si.clim$dmn, si.clim$dmn.qt10, si.clim$dmn.qt90, colo='gray60', span=0.2)
+mtext( side = 2, expression( "SiO"[2]  *", "*mu *"mol.l"^-1 ), line = 3, cex = 1.5, col = "gray40" )
 #### ----
 
 #######################################################
@@ -1423,8 +1467,8 @@ at.sum$satl.dfls = saturation.light(at.sum$dflsesd, at.sum$lm)
 sw.sum$satl.phys = saturation.light(sw.sum$sizes, sw.sum$lm)
 sw.sum$satl.phyl = saturation.light(sw.sum$sizel, sw.sum$lm)
 sw.sum$satl.dfls = saturation.light(sw.sum$dflsesd, sw.sum$lm)
-
 ## 
+
 summary(sp.sum[c('satl.phys', 'satl.phyl', 'satl.dfls')]) # Mean of light saturation
 summary(at.sum[c('satl.phys', 'satl.phyl', 'satl.dfls')]) # Mean of light saturation
 summary(sw.sum[c('satl.phys', 'satl.phyl', 'satl.dfls')]) # Mean of light saturation
@@ -1562,13 +1606,13 @@ get.cor = function(v1, v2){
   
   cor.st = cor.test( v1, v2, method = "spearman", use = "complete.obs" )
   p.st = p.lab[ max( which(cor.st$p.value <= p.test ) ) ]
-  #cor.txt = paste( "r2:", round(cor.st$estimate**2, 2) , ", ", p.st, sep = "" )
-  cor.txt = paste( "r2:", round(cor.st$estimate**2, 2) , "\n", p.st, sep = "" )
+  #cor.txt = paste( "r2:", round(cor.st$estimate**2, 2) , "\n", p.st, sep = "" ) # R2
+  cor.txt = paste( "r:", round(cor.st$estimate, 2) , "\n", p.st, sep = "" ) # R
+  
   return( list(cor.txt, cor.st$p.value, cor.st$estimate) )
 }
 
-subplot.cor = function(v2, v1, xlab, ylab, line.cor, control){
-  cex.txt = 1.3
+subplot.cor = function(v2, v1, xlab, ylab, line.cor, control, cex.txt = 1.3){
   
   # Colors
   col.bu = rgb( 0.3, 0.3, 0.8, alpha = 0.5)
@@ -1619,7 +1663,7 @@ subplot.cor = function(v2, v1, xlab, ylab, line.cor, control){
   axis(2, at=pretty(y.lim), labels=pretty(y.lim)*100, cex.axis=cex.txt*1.3, las = 1, tck=0.02, col.axis=col.axis)
   
   mtext(side = 1, xlab, line = 2.7, cex=cex.txt*0.92 )
-  mtext(side = 2, ylab, line = 2.6, cex=cex.txt*0.95, adj=0.8 )
+  mtext(side = 2, ylab, line = 2.6, cex=cex.txt*0.92, adj=0.8 )
   
   col.cor = col.axis
   if( cor.txt[[2]]<0.1 ){
@@ -1643,37 +1687,37 @@ plot.rates = function(frame, line.cor=-5, season=NA){
   ## Small phy
   subplot.cor(meanf$sat.phys, ratef$biocs, expression("Nutrient co-limitation"),
               expression("Small phyto RCR, 10"^-2 *".d"^-1), line.cor, "BU")
-  subplot.cor(meanf$s.dw, ratef$biocs, expression("Small zoo., mg.m"^-3),
+  subplot.cor(meanf$s.dw, ratef$biocs, expression("Small zoo, log mg.m"^-3),
               '', line.cor, "TD")
-  subplot.cor(meanf$l.dw, ratef$biocs, expression("Large zoo., mg.m"^-3),
+  subplot.cor(meanf$l.dw, ratef$biocs, expression("Large zoo, log mg.m"^-3),
               '', line.cor, "TD")
   matplot(1,1, type="n", axes=F, xlab='', ylab='')
   
   ## Large phy
   subplot.cor(meanf$sat.phyl, ratef$biocl, expression("Nutrient co-limitation"),
               expression("Large phyto RCR, 10"^-2 *".d"^-1), line.cor, "BU")
-  subplot.cor(meanf$l.dw, ratef$biocl, expression("Large zoo., mg.m"^-3), 
+  subplot.cor(meanf$l.dw, ratef$biocl, expression("Large zoo, log mg.m"^-3), 
               '', line.cor, "TD")
   matplot(1,1, type="n", axes=F, xlab='', ylab='')
   matplot(1,1, type="n", axes=F, xlab='', ylab='')
 
   ## Small zoo
-  subplot.cor(meanf$biocs, ratef$s.dw, expression("Small phyto, " *mu *"molC.L"^-1), 
+  subplot.cor(meanf$biocs, ratef$s.dw, expression("Small phyto, log " *mu *"gC.L"^-1), 
               expression("Small zoo RCR, 10"^-2 *".d"^-1), line.cor, "BU")
-  subplot.cor(meanf$l.dw, ratef$s.dw, expression("Large zoo., mg.m"^-3), 
+  subplot.cor(meanf$l.dw, ratef$s.dw, expression("Large zoo, log mg.m"^-3), 
               '', line.cor, "TD")
-  subplot.cor(meanf$c.dw, ratef$s.dw, expression("Carn zoo., mg.m"^-3), 
+  subplot.cor(meanf$c.dw, ratef$s.dw, expression("Carn zoo, log mg.m"^-3), 
               '', line.cor, "TD")
   matplot(1,1, type="n", axes=F, xlab='', ylab='')
 
   ## Large zoo
-  subplot.cor(meanf$biocs, ratef$l.dw, expression("Small phyto, " *mu *"molC.L"^-1), 
+  subplot.cor(meanf$biocs, ratef$l.dw, expression("Small phyto, log " *mu *"gC.L"^-1), 
               expression("Large zoo RCR, 10"^-2 *".d"^-1), line.cor, "BU")
-  subplot.cor(meanf$biocl, ratef$l.dw, expression("Large phyto, " *mu *"molC.L"^-1), 
+  subplot.cor(meanf$biocl, ratef$l.dw, expression("Large phyto, log " *mu *"C.L"^-1), 
               '', line.cor, "BU")
-  subplot.cor(meanf$s.dw, ratef$l.dw, expression("Small zoo., mg.m"^-3), 
+  subplot.cor(meanf$s.dw, ratef$l.dw, expression("Small zoo, log mg.m"^-3), 
               '', line.cor, "BU")
-  subplot.cor(meanf$c.dw, ratef$l.dw, expression("Carn zoo., mg.m"^-3), 
+  subplot.cor(meanf$c.dw, ratef$l.dw, expression("Carn zoo, log mg.m"^-3), 
               '', line.cor, "TD")
 
   ## Season label
@@ -1695,6 +1739,88 @@ plot.rates = function(frame, line.cor=-5, season=NA){
 plot.rates(sp.rate, line.cor=-3.5, season="Spring")
 plot.rates(at.rate, line.cor=-3.5, season="Autumn")
 plot.rates(sw.rate, line.cor=-3.5, season="Summer")
+
+# Plot also with the dinoflagellates
+plot.rates.full = function(frame, line.cor=-3, season=NA){
+  meanf = frame[[2]]
+  ratef = frame[[1]]
+  
+  #x11(height = 25, width = 15)
+  par(mfrow=c(5,5), mar=c(4, 5, 1, 0.1), mgp=c(3,0.6,0))
+  
+  ## Small phy
+  subplot.cor(meanf$sat.phys, ratef$biocs, expression("Nutrient co-limitation"),
+              expression("Small phyto RCR, 10"^-2 *".d"^-1), line.cor, "BU", cex.txt=1.2)
+  subplot.cor(meanf$dflsc, ratef$biocs, expression("Dinoflag, log " *mu*"gC.L"^-1),
+              '', line.cor, "TD", cex.txt=1.2)
+  subplot.cor(meanf$s.dw, ratef$biocs, expression("Small zoo, log mg.m"^-3),
+              '', line.cor, "TD", cex.txt=1.2)
+  subplot.cor(meanf$l.dw, ratef$biocs, expression("Large zoo, log mg.m"^-3),
+              '', line.cor, "TD", cex.txt=1.2)
+  matplot(1,1, type="n", axes=F, xlab='', ylab='')
+  
+  ## Large phy
+  subplot.cor(meanf$sat.phyl, ratef$biocl, expression("Nutrient co-limitation"),
+              expression("Large phyto RCR, 10"^-2 *".d"^-1), line.cor, "BU", cex.txt=1.2)
+  subplot.cor(meanf$l.dw, ratef$biocl, expression("Large zoo, log mg.m"^-3), 
+              '', line.cor, "TD", cex.txt=1.2)
+  matplot(1,1, type="n", axes=F, xlab='', ylab='')
+  matplot(1,1, type="n", axes=F, xlab='', ylab='')
+  matplot(1,1, type="n", axes=F, xlab='', ylab='')
+  
+  ## Dinoflagellates
+  subplot.cor(meanf$sat.dfls, ratef$dflsc, expression("Nutrient co-limitation"),
+              expression("Dinoflag RCR, 10"^-2 *".d"^-1), line.cor, "BU", cex.txt=1.2)
+  subplot.cor(meanf$biocs, ratef$dflsc, expression("Small phyto, log " *mu*"gC.L"^-1),
+              '', line.cor, "TD", cex.txt=1.2)
+  subplot.cor(meanf$s.dw, ratef$dflsc, expression("Small zoo, log mg.m"^-3),
+              '', line.cor, "TD", cex.txt=1.2)
+  subplot.cor(meanf$l.dw, ratef$dflsc, expression("Large zoo, log mg.m"^-3),
+              '', line.cor, "TD", cex.txt=1.2)
+  matplot(1,1, type="n", axes=F, xlab='', ylab='')
+  
+  ## Small zoo
+  subplot.cor(meanf$biocs, ratef$s.dw, expression("Small phyto, log " *mu *"gC.L"^-1), 
+              expression("Small zoo RCR, 10"^-2 *".d"^-1), line.cor, "BU", cex.txt=1.2)
+  subplot.cor(meanf$dflsc, ratef$s.dw, expression("Dinoflag, log " *mu*"gC.L"^-1), 
+              '', line.cor, "BU", cex.txt=1.2)
+  subplot.cor(meanf$l.dw, ratef$s.dw, expression("Large zoo, log mg.m"^-3), 
+              '', line.cor, "TD", cex.txt=1.2)
+  subplot.cor(meanf$c.dw, ratef$s.dw, expression("Carn zoo, log mg.m"^-3), 
+              '', line.cor, "TD", cex.txt=1.2)
+  matplot(1,1, type="n", axes=F, xlab='', ylab='')
+  
+  ## Large zoo
+  subplot.cor(meanf$biocs, ratef$l.dw, expression("Small phyto, log " *mu *"gC.L"^-1), 
+              expression("Large zoo RCR, 10"^-2 *".d"^-1), line.cor, "BU", cex.txt=1.2)
+  subplot.cor(meanf$biocl, ratef$l.dw, expression("Large phyto, log " *mu *"gC.L"^-1), 
+              '', line.cor, "BU", cex.txt=1.2)
+  subplot.cor(meanf$dflsc, ratef$l.dw, expression("Dinoflag, log " *mu*"gC.L"^-1), 
+              '', line.cor, "BU", cex.txt=1.2)
+  subplot.cor(meanf$s.dw, ratef$l.dw, expression("Small zoo, log mg.m"^-3), 
+              '', line.cor, "BU", cex.txt=1.2)
+  subplot.cor(meanf$c.dw, ratef$l.dw, expression("Carn zoo, log mg.m"^-3), 
+              '', line.cor, "TD", cex.txt=1.2)
+  
+  ## Season label
+  par(fig=c(0,1,0,1), new=T)
+  matplot(1,1, type="n", axes=F, xlab='', ylab='', xlim=c(0,1), ylim=c(0,1))
+  mtext(side = 3, season, line = -20, cex=1.4, adj=0.83, font=2 )
+  
+  col.bu = rgb( 0.3, 0.3, 0.8, alpha = 0.5)
+  col.td = rgb( 0.9, 0.3, 0.3, alpha = 0.5)
+  col.unc = rgb(0.3, 0.3, 0.3, 0.5)
+  col.not = rgb(0.6, 0.6, 0.6, 0.3)
+  
+  legend(x=0.82, y=0.8, horiz=F, bty="n", 
+         legend=c('Top-down regulation', 'Bottom-up regulation', 'Unclear regulation', 'Not significant'),
+         pch=19, col=c(col.td, col.bu, col.unc, col.not), cex=2., pt.cex=4, 
+         x.intersp=0.7, y.intersp=1.5)
+}
+
+plot.rates.full(sp.rate, season="Spring")
+plot.rates.full(sw.rate, season="Summer")
+plot.rates.full(at.rate, season="Autumn")
 
 ## Show the complete correlation table (in SI)
 corr.rate = function(frame){
@@ -2153,11 +2279,11 @@ scaleplot(axbc, xmax, "chartreuse3", stacker = 0, lwd = linew)
 #### Checking NAO (log trend) ----
 naof = read.nao()
 
-naof$trend = filter( naof$nao, filter=filter.wind, sides=2, method="convolution")
-naof$date = ymd( paste(naof$yr, "-", naof$mth, "-01", sep="") )
-
 ind.shift = test.student(naof$mth, naof$yr, naof$nao) ; dev.off()
 naof$nao = norm.stud(ind.shift, naof$nao) # Shift at indice 293
+
+naof$trend = filter( naof$nao, filter=filter.wind, sides=2, method="convolution")
+naof$date = ymd( paste(naof$yr, "-", naof$mth, "-01", sep="") )
 
 ind.na = which(is.na(naof$trend))
 specnao = spec.pgram(fast=T, naof$trend[-ind.na], demean=T, plot=F)
@@ -2413,7 +2539,7 @@ par(fig=c(0, 0.5, 0, 1), new=T)
 matplot( c(1,1), c(0,1), axes=F, xlab="", ylab="", type="n", 
          xlim=c(0, 1), ylim=c(0, 1) )
 
-text(x = 0.7, y = 0.16, "NAO", cex=1.8, col="dodgerblue4", font=1)
+text(x = 0.86, y = 0.16, "NAO", cex=1.8, col="dodgerblue4", font=1)
 text(x = 0.3, y = 0.16, "Wind direction", cex=1.8, col="black", font=1)
 
 text(x = 0.6, y = 0.45, "Salinity", cex=1.8, col="black", font=1, xpd = T)
@@ -2436,10 +2562,10 @@ mtext(side = 2, "Moving average, scaled", font = 1, cex = 1.8, line=2.5)
 par( fig = c( 0, 1, 0, 1 ), mar = c( 0, 0, 0, 0 ), new = T )
 matplot( -0.9, 1, type = "n", axes = F, xlab = "", ylab = "", 
          xlim = c( -1, 1 ), ylim = c( -1, 1 ), add = F, xpd = T)
-text( x = -1, y = 1.03, "(a)", font = 2, cex = 1.8, xpd = T )
+text( x = -1, y = 1.03, "(A)", font = 2, cex = 1.8, xpd = T )
 text( x = -0.63, y = 1.03, "Smoothed monthly time series", cex = 1.8, xpd = T )
 
-text( x = 0.05, y = 1.03, "(b)", font = 2, cex = 1.8 )
+text( x = 0.05, y = 1.03, "(B)", font = 2, cex = 1.8 )
 text( x = 0.28, y = 1.03, "Fourier spectra", cex = 1.8 )
 
 mtext(side = 1, adj=0.72, line=-38.5, "Small phytoplankton", font = 1, cex=1.8)
@@ -2583,10 +2709,10 @@ mtext(side = 2, "Moving average (year)", font = 1, cex = 1.8, line=2.6)
 par( fig = c( 0, 1, 0, 1 ), mar = c( 0, 0, 0, 0 ), new = T )
 matplot( -0.9, 1, type = "n", axes = F, xlab = "", ylab = "", 
          xlim = c( -1, 1 ), ylim = c( -1, 1 ), add = F, xpd = T)
-text( x = -1, y = 1.03, "(a)", font = 2, cex = 1.8, xpd = T )
+text( x = -1, y = 1.03, "(A)", font = 2, cex = 1.8, xpd = T )
 text( x = -0.63, y = 1.03, "Smoothed monthly time series", cex = 1.8, xpd = T )
 
-text( x = 0.05, y = 1.03, "(b)", font = 2, cex = 1.8 )
+text( x = 0.05, y = 1.03, "(B)", font = 2, cex = 1.8 )
 text( x = 0.28, y = 1.03, "Fourier spectra", cex = 1.8 )
 
 mtext(side = 1, adj=0.09, line=-48, "Dinoflagellates", 

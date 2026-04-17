@@ -21,12 +21,18 @@ approxer = function(datam){
   datam = merge( datam, mth.weight, by = "mth" )
   datam = datam[order(datam$yr),] # Retidying after the merge
   
-  datam$nb = datam$nb / datam$ntot
+  datam$wi = datam$nb / datam$ntot
   climat = ddply(datam, .(mth), summarize, 
-                 smean = sum( vol * nb, na.rm=T ), 
-                 bmean = sum( bioc * nb, na.rm=T ), 
-                 bvmean = sum( biovol * nb, na.rm=T ) )
-  
+                 smean = sum( vol * wi, na.rm=T ), 
+                 bmean = sum( bioc * wi, na.rm=T ), 
+                 bvmean = sum( biovol * wi, na.rm=T ),
+                 #size.sd = sqrt( sum( nb*(vol - sum( vol * wi, na.rm=T ))**2 ) / (sum(nb)-1) ),
+                 bioc.sd = sqrt( sum( nb*( bioc - sum( bioc * wi, na.rm=T ))**2 ) / (sum(nb)-1) ),
+                 bioc.qt90 = quantile( rep(bioc, times=nb), probs=0.9 ),
+                 bioc.qt10 = quantile( rep(bioc, times=nb), probs=0.1 ) # Weighted quantiles
+  )
+                 #biovol.sd = sqrt( sum( nb*(biovol - sum( biovol * wi, na.rm=T ))**2 ) / (sum(nb)-1) ) )
+
   indlast = length(datam$yr)
   cmth = c() # Data vectors
   cyr=c()
@@ -155,7 +161,7 @@ seriesphy = function(datas){
                   biocday = sum(bioC, na.rm=T), # Sum biomass per day
                   biovday = sum(biovolume, na.rm=T) )
   
-  datas$relbios = datas$mean.size # Placeholder
+  datas$relbios = NA # Placeholder
   
   # Calculating the weights for the mean cell size
   for(d in unique(datas$USI)){
@@ -175,13 +181,11 @@ seriesphy = function(datas){
   datastat = dataday # Storing the data
   
   datam = ddply(datastat, .(yr, mth), summarize,
-                bioc = mean(log(biocday), na.rm=T), vol = mean(log(meanvol), na.rm=T), 
-                biovol = mean(log(biovday), na.rm=T),
+                bioc = exp( mean(log(biocday), na.rm=T) ), 
+                vol = exp( mean(log(meanvol), na.rm=T) ), 
+                biovol = exp( mean(log(biovday), na.rm=T) ),
                 nb = sum(mth) )
   
-  datam$vol = exp(datam$vol)   # Converting all log variables back to normal
-  datam$bioc = exp(datam$bioc)
-  datam$biovol = exp(datam$biovol)
   datam$nb = datam$nb / datam$mth # Number of observations, to compute climatology as in Barton et al, (2003)
   datam.final = approxer(datam) # Filling missing months
   
@@ -196,10 +200,12 @@ climat.env = function(data.env){
   mth.env = ddply( data.env, .(mth), summarize, tot.nb = sum( nb * clim.use ) )
   
   data.env = merge( data.env, mth.env, by = "mth" )
-  data.env$nb = data.env$nb / data.env$tot.nb
+  data.env$wi = data.env$nb / data.env$tot.nb
   
   clim.comp = ddply( data.env, .(mth), summarize,
-                     dmn = sum( dmn * nb, na.rm = T ) )
+                     dmn.qt90 = quantile( rep(dmn, times=nb), probs=0.9 ),  # Weighted quantiles
+                     dmn.qt10 = quantile( rep(dmn, times=nb), probs=0.1 ),
+                     dmn = sum( dmn * wi, na.rm = T ) )
   return(clim.comp)} 
 
 # Computes approximated series 
@@ -413,12 +419,27 @@ zooseries = function(data){ # Computing the monthly series and climatology
   # Replaced by the climatology (as in Barton et al, 2003) of the month
   weight.mth = ddply( dataim, .(mth), summarize, tot.nb = sum( nb ) )
   dataim = merge( dataim, weight.mth,  by = "mth")
-  dataim$nb = dataim$nb / dataim$tot.nb
   dataim = dataim[ order(dataim$yr), ]
+  dataim$wi = dataim$nb / dataim$tot.nb
   
-  climat = ddply(dataim, .(mth), summarize, 
-                 dw = sum( dw * nb, na.rm = T ), 
-                 sze = sum( size * nb, na.rm = T ) ) # Climatology
+  climat = ddply(dataim, .(mth), summarize, # Climatology
+                 dw.qt90 = quantile( rep(dw, times=nb), probs=0.90 ),  # Weighted quantiles
+                 dw.qt10 = quantile( rep(dw, times=nb), probs=0.10 ),
+                 dw = sum( dw * wi, na.rm = T ),
+                 sze = sum( size * wi, na.rm = T )
+                  )
+                 # dw.sd = sqrt( sum( nb*(dw - sum( dw * wi, na.rm=T ))**2 ) / (sum(nb)-1) ),
+                 # sze.sd = sqrt( sum( nb*(sze - sum( sze * wi, na.rm=T ))**2 ) / (sum(nb)-1) ) )
+  
+  ## There is no SD, as there is only one point per month usually
+  # climat = ddply(dataim, .(mth), summarize, # Climatology
+  #                dw = exp( sum( log(dw) * wi, na.rm = T ) ), 
+  #                sze = exp( sum( log(size) * wi, na.rm = T ) ),
+  #                dw.sd = sqrt( sum( nb*( log(dw) - sum( log(dw) * wi, na.rm=T ))**2 ) / (sum(nb)-1) ) )
+  #                #sze.sd = sqrt( sum( nb*(sze - sum( sze * wi, na.rm=T ))**2 ) / (sum(nb)-1) ) ) 
+  # 
+  # climat$dw.sd.min = exp( log(climat$dw) - climat$dw.sd )
+  # climat$dw.sd.max = exp( log(climat$dw) + climat$dw.sd )
   
   # Checking for missing months
   mthr = range(climat$mth)
@@ -535,12 +556,16 @@ read.nao = function(){
   x1 = strsplit(x, '\\s|\\n', fixed=F)[[1]]
   x1 = x1[-which(x1=='')]
   
-  xmat = matrix(c('', x1), ncol = 13, byrow=T)
-  nao = matrix(data.matrix(xmat[-1,2:13]), ncol=1)
+  # Add NAs for the missing months of the current year, if any
+  x1 = c(NA, x1) # The NA at the upper left of the table, empty box
+  x1 = c(x1, rep(NA, (13-length(x1)%%13) ) ) # All the empty boxes left by the incomplete measurements for the current year
+  
+  xmat = matrix(x1, ncol = 13, byrow=T)
+  nao = matrix(data.matrix( t(xmat[-1,2:13]) ), ncol=1)
   timeseq = rep(xmat[-1,1], each = 12)
   mthseq = rep(1:12, length( unique(timeseq) ))
-  naof = data.frame(yr = as.numeric(timeseq), 
-                    mth = as.numeric(mthseq), 
+  naof = data.frame(yr = as.numeric(timeseq),
+                    mth = as.numeric(mthseq),
                     nao = as.numeric(nao))
   
   return(naof)
