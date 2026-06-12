@@ -11,20 +11,23 @@ library(stats)
 library(gridExtra)
 library(shape)
 library(rvest)     # Read dataframes from webpages
-#library(lme4)     # Package for GLMMs
+library(ppcor)
+library(dplyr)
+library(purrr)
+library(splines)
 source('functions_main.R')
 
 #### Phytoplankton data
-stationf = read.csv("Prevalence-of-top-down-control-in-coastal-planktonic-food-webs-datasets/Phytoplankton_NLWKN.csv",
+stationf = read.csv("High-relevance-of-top-down-control-in-coastal-planktonic-food-webs-datasets/Phytoplankton_NLWKN.csv",
                     skip=4)
 
 #### Mixotrophs data
-dino.ess = read.csv("Prevalence-of-top-down-control-in-coastal-planktonic-food-webs-datasets/Mixotrophs_NLWKN.csv",
+dino.ess = read.csv("High-relevance-of-top-down-control-in-coastal-planktonic-food-webs-datasets/Mixotrophs_NLWKN.csv",
                     skip=4)
 dino.ess = dino.ess[-which(dino.ess$bioC==0),] # Remove the taxa absent from the samples
 
 #### Fish landings data
-datah = read.csv("Prevalence-of-top-down-control-in-coastal-planktonic-food-webs-datasets/fishlandings.csv", skip=4, header=T) # Extracting the dataset
+datah = read.csv("High-relevance-of-top-down-control-in-coastal-planktonic-food-webs-datasets/fishlandings.csv", skip=4, header=T) # Extracting the dataset
 planktinames = c( "Hering" ) # Focus on Herring
 
 dataf = fish.approx(datah, planktinames) # Herring
@@ -37,7 +40,7 @@ dataf = dataf[ind, ] # There are not much data before 2013
 dataf$date = ymd( paste( dataf$year, "-", dataf$month, "-15", sep = "" ) )
 
 #### Zoo data
-data = read.csv("Prevalence-of-top-down-control-in-coastal-planktonic-food-webs-datasets/Zooplankton_NLWKN.csv",
+data = read.csv("High-relevance-of-top-down-control-in-coastal-planktonic-food-webs-datasets/Zooplankton_NLWKN.csv",
                 skip=4)
 data$Date = ymd( data$Date )
 
@@ -46,13 +49,36 @@ data.ops = data[ -which( is.na(data$ops) ), ]
 data$ops.alt = NA
 
 ## Environmental forcing data (Nutrients, Temperature, Salinity)
-waddenEnvtot = read.table("Prevalence-of-top-down-control-in-coastal-planktonic-food-webs-datasets/Environment.csv", header = TRUE, sep=",",
+waddenEnvtot = read.table("High-relevance-of-top-down-control-in-coastal-planktonic-food-webs-datasets/Environment.csv", header = TRUE, sep=",",
                           skip=4)
-solar.data = read.table("Prevalence-of-top-down-control-in-coastal-planktonic-food-webs-datasets/Surface_irradiance.csv", header = TRUE, sep=",",
+solar.data = read.table("High-relevance-of-top-down-control-in-coastal-planktonic-food-webs-datasets/Surface_irradiance.csv", header = TRUE, sep=",",
                         skip=8)
 waddenEnvtot = merge(waddenEnvtot, solar.data[c('USI', 'I0')], by='USI')
 waddenEnvtot = waddenEnvtot[ which( waddenEnvtot$StationID %in% unique(stationf$stationID) | waddenEnvtot$StationID %in% unique(data$Station) ), ] # Remove stations where no plankton information
 statin = waddenEnvtot$StationID
+
+#### Test: select only a region of the Wadden Sea
+# station.coord = read.csv('~/PhD/Work/Food web analysis - Paper 1/Fixing code/Stations.csv',
+#                          header=T)
+# 
+# #Kmeans clustering of groups
+# #clust.groups = kmeans(station.coord[c('N', 'E')], 2)$cluster
+# 
+# # Gives the same result as the kmeans on coordinates
+# east.stations = station.coord$Station[station.coord$E>7.5]
+# west.stations = station.coord$Station[station.coord$E<7.5]
+# 
+# # East analysis
+# stationf = stationf[ which(stationf$stationID %in% east.stations), ]
+# dino.ess = dino.ess[ which(dino.ess$stationID %in% east.stations), ]
+# data = data[ which(data$Station %in% east.stations), ]
+# waddenEnvtot = waddenEnvtot[ which(waddenEnvtot$StationID %in% east.stations), ]
+# 
+# # West analysis
+# stationf = stationf[ which(stationf$stationID %in% west.stations), ]
+# dino.ess = dino.ess[ which(dino.ess$stationID %in% west.stations), ]
+# data = data[ which(data$Station %in% west.stations), ]
+# waddenEnvtot = waddenEnvtot[ which(waddenEnvtot$StationID %in% west.stations), ]
 
 #### Computing mean daily series of Phyto and Zoo ----
 
@@ -337,14 +363,14 @@ season.f = season.f[ -which(season.f$mth < 3 | season.f$mth > 10), ]
 # Small phy
 physm = seriesphy(phys)
 phys.clim = physm[[2]] ; physm = physm[[1]]  # Monthly data
-physm$bioctrend = filter( log(physm$bioc), filter=filter.wind ) # Smoothed 
-physm$szetrend = filter( log(physm$vol), filter=filter.wind )
+physm$bioctrend = stats::filter( log(physm$bioc), filter=filter.wind ) # Smoothed 
+physm$szetrend = stats::filter( log(physm$vol), filter=filter.wind )
 
 # Large phy
 phylm = seriesphy(phyl)
 phyl.clim = phylm[[2]] ; phylm = phylm[[1]]  # Monthly data
-phylm$bioctrend = filter( log(phylm$bioc), filter=filter.wind )
-phylm$szetrend = filter( log(phylm$vol), filter=filter.wind )
+phylm$bioctrend = stats::filter( log(phylm$bioc), filter=filter.wind )
+phylm$szetrend = stats::filter( log(phylm$vol), filter=filter.wind )
 
 # All phy
 phyallm = seriesphy(stationf)
@@ -354,13 +380,13 @@ phy.clim = phyallm[[2]] ; phyallm = phyallm[[1]]  # Monthly data
 # Dinoflagellates heterotophs
 dflsm = seriesphy(dfls) # Small dinoflagellates
 dflsm.clim = dflsm[[2]] ; dflsm = dflsm[[1]]  # Monthly data
-dflsm$bioctrend = filter( log(dflsm$bioc), filter=filter.wind )
-dflsm$szetrend = filter( log(dflsm$vol), filter=filter.wind )
+dflsm$bioctrend = stats::filter( log(dflsm$bioc), filter=filter.wind )
+dflsm$szetrend = stats::filter( log(dflsm$vol), filter=filter.wind )
 
 dfllm = seriesphy(dfll) # Large dinoflagellates
 dfllm.clim = dfllm[[2]] ; dfllm = dfllm[[1]]  # Monthly data
-dfllm$bioctrend = filter( log(dfllm$bioc), filter=filter.wind )
-dfllm$szetrend = filter( log(dfllm$vol), filter=filter.wind )
+dfllm$bioctrend = stats::filter( log(dfllm$bioc), filter=filter.wind )
+dfllm$szetrend = stats::filter( log(dfllm$vol), filter=filter.wind )
 
 # Environment
 listenvw = envapprox(waddenEnvtot) 
@@ -373,25 +399,19 @@ p.series = listenvw[[3]] # Phosphorus
 zoosm = zooseries(zoos) 
 zoos.clim = zoosm[[2]] # Climatology
 zoosm = zoosm[[1]]
-zoosm$trend = log( filter(zoosm$dataprx, filter=filter.wind) ) # Smoothed biomass
+zoosm$trend = log( stats::filter(zoosm$dataprx, filter=filter.wind) ) # Smoothed biomass
 
 # Large zooplankton
 zoolm = zooseries(zool) 
 zool.clim = zoolm[[2]] # Climatology
 zoolm = zoolm[[1]]
-zoolm$trend = log( filter(zoolm$dataprx, filter=filter.wind) )
+zoolm$trend = log( stats::filter(zoolm$dataprx, filter=filter.wind) )
 
 # Carn zooplankton
 zoocm = zooseries(zooc) 
 zooc.clim = zoocm[[2]] # Climatology
 zoocm = zoocm[[1]]
-zoocm$trend = log( filter(zoocm$dataprx, filter=filter.wind) )
-
-# Highest TL zooplankton
-# zoohlm = zooseries(zoohl) 
-# zoohl.clim = zoohlm[[2]] # Climatology
-# zoohlm = zoohlm[[1]]
-# zoohlm$trend = log( filter(zoohlm$dataprx, filter=filter.wind) )
+zoocm$trend = log( stats::filter(zoocm$dataprx, filter=filter.wind) )
 
 ## Adding the dates for plotting later
 physm$date = ymd(paste(physm$yr, "-", physm$mth, "-15", sep=""))
@@ -633,31 +653,31 @@ mtext( side = 2, expression( "NO"[3]^-"" ),
 mtext( side = 2, 'and', line = 4.5, cex = 1.5, adj = 0.13, col = "black" )
 mtext( side = 2, expression( "SiO"[2] ), 
        line = 4.2, cex = 1.5, adj = 0.19, col = "gray40" )
-mtext( side = 2, expression( mu *"mol.l"^-1 ), 
+mtext( side = 2, expression( mu *"mol.L"^-1 ), 
        line = 2.5, cex = 1.5, adj = 0.12, col = "black" )
 # mtext( side = 2, expression( "NO"[3]^-"" *", "*mu *"mol.l"^-1 ), 
 #        line = 3.2, cex = 1.5, adj = 0.05, col = "darkblue" )
 
 smooth.lines( p.clim$mth, scale( p.clim$dmn ), colo = "dodgerblue", span = 0.2 )
 axis.scale( p.clim$dmn, side = 4, cex.axis = 1.5, las = 1 )
-mtext( side = 4, expression( "PO"[4]^3^-"" *", "*mu *"mol.l"^-1 ), 
+mtext( side = 4, expression( "PO"[4]^3^-"" *", "*mu *"mol.L"^-1 ), 
        line = 4.5, cex = 1.5, adj = 0.05, col = "dodgerblue" )
 
 off = 3.8 # Offset for plotting the second row of scaled climatologies
 smooth.lines( phys.clim$mth, scale( phys.clim$bmean ) +off, colo = "chartreuse2", span = 0.2 )
 axis.scale( phys.clim$bmean, side = 2, off = off, cex.axis = 1.5, las = 1 )
-mtext( side = 2, expression( "Small, "*mu *"gC.l"^-1 ), 
+mtext( side = 2, expression( "Small, "*mu *"gC.L"^-1 ), 
        line = 3.2, cex = 1.5, adj = 0.32, col = "chartreuse3" )
 
 smooth.lines( phyl.clim$mth, scale( phyl.clim$bmean ) +off, colo = "darkolivegreen", span = 0.2 )
 axis.scale( phyl.clim$bmean, side = 4, off = off, cex.axis = 1.5, las = 1 )
-mtext( side = 4, expression( "Large, "*mu *"gC.l"^-1 ), 
+mtext( side = 4, expression( "Large, "*mu *"gC.L"^-1 ), 
        line = 4.5, cex = 1.5, adj = 0.32, col = "darkolivegreen" )
 
 off = 8.8 # Offset for plotting the fourth
 smooth.lines( dflsm.clim$mth, scale( dflsm.clim$bmean ) +off, colo = "black", span = 0.2 )
 axis.scale( dflsm.clim$bmean, side = 2, off = off, cex.axis = 1.5, las = 1 )
-mtext( side = 2, expression( mu *"gC.l"^-1 ), 
+mtext( side = 2, expression( mu *"gC.L"^-1 ), 
        line = 3.2, cex = 1.5, adj = 0.56, col = "black" )
 
 off = 13.3 # Offset for plotting the fourth
@@ -822,6 +842,93 @@ dom.zoo.all = dom.zoo.all[ c("group", "Taxa", "w") ] # Mean taxonomic compositio
 ### Annual means and correlations ### ----------------------------------------------------
 #####################################
 
+## Build the annual data frame ----
+build_anu_df = function(method){
+  
+  # Mean or sum of monthly values?
+  if(method == 'mean'){fn = function(x) mean(x, na.rm=T)
+  }else if(method == 'sum'){fn = function(x) sum(x, na.rm=T)}
+  
+  # Annual aggregation
+  n.anu   = ddply(n.series, .(yr),   summarize, nm  = fn(dmn) )
+  p.anu   = ddply(p.series, .(yr),   summarize, pm  = fn(dmn) )
+  si.anu  = ddply(si.series, .(yr),  summarize, sim = fn(dmn) )
+  spm.anu = ddply(spm.series, .(yr), summarize, spm = fn(dmn) )
+  sal.anu = ddply(sal.series, .(yr), summarize, sal = fn(dmn) )
+  l.anu   = ddply(rad, .(yr),        summarize, l   = fn(lm) )
+  t.anu   = ddply(t.series, .(yr),   summarize, tm  = fn(dmn) )
+  
+  phytos.anu = ddply(physm, .(yr), summarize, 
+                     biocs    = fn( log( bioc ) ),
+                     esd.phys = fn( log( (vol * 3/4/pi)**(1/3)*2 ) ) )
+  
+  phytol.anu = ddply(phylm, .(yr), summarize, 
+                     biocl    = fn( log( bioc ) ),
+                     esd.phyl = fn( log( (vol * 3/4/pi)**(1/3)*2 ) ) )
+  
+  phytall.anu = ddply(phyallm, .(yr), summarize, 
+                      biocl    = fn( log( bioc ) ),
+                      esd.phyl = fn( log( (vol * 3/4/pi)**(1/3)*2 ) ) )
+  
+  dfls.anu = ddply(dflsm, .(yr), summarize, 
+                   dflcs    = fn( log(bioc +1) ),
+                   esd.dfls = fn( log( (vol * 3/4/pi)**(1/3)*2 ) ) )
+  
+  dfll.anu = ddply(dfllm, .(yr), summarize, 
+                   dflcl    = fn( log( bioc +1) ),
+                   esd.dfll = fn( log( (vol * 3/4/pi)**(1/3)*2 ) ) )
+  
+  zoos.anu = ddply(zoosm, .(yr), summarize, 
+                   dws  = fn( log( dw +1) ),
+                   esds = fn( log( (sze * 3/4/pi)**(1/3)*2 ) ) )
+  
+  zool.anu = ddply(zoolm, .(yr), summarize, 
+                   dwl  = fn( log( dw +1) ),
+                   esdl = fn( log( (sze * 3/4/pi)**(1/3)*2 ) ) )
+  
+  ind.remove = which(zoocm$yr > 2015) # Extreme point first year 
+  zooc.anu = ddply(zoocm[ind.remove,], .(yr), summarize, 
+                   dwc  = fn( log( dw +1) ),
+                   esdc = fn( log( (sze * 3/4/pi)**(1/3)*2 ) ) )
+  
+  fish.anu = ddply( dataf, .(year), summarize, 
+                    ft = fn( log(t +1) ) )
+  
+  # Merge the annual dataset
+  anu.data = list(
+    phytos.anu,
+    phytol.anu  |> select(yr, biocl, esd.phyl),
+    phytall.anu |> rename(bioca = biocl, esd.phya = esd.phyl) |> select(yr, bioca, esd.phya),
+    dfll.anu    |> rename(dfllc = dflcl) |> select(yr, dfllc, esd.dfll),
+    dfls.anu    |> rename(dflsc = dflcs) |> select(yr, dflsc, esd.dfls),
+    t.anu       |> rename(temp = tm)     |> select(yr, temp),
+    n.anu       |> rename(n = nm)        |> select(yr, n),
+    p.anu       |> rename(p = pm)        |> select(yr, p),
+    si.anu      |> rename(si = sim)      |> select(yr, si),
+    spm.anu     |>                          select(yr, spm),
+    sal.anu     |>                          select(yr, sal),
+    l.anu       |> rename(lm = l)        |> select(yr, lm),
+    zoos.anu    |> rename(s.dw = dws, esds = esds) |> select(yr, s.dw, esds),
+    zool.anu    |> rename(l.dw = dwl, esdl = esdl) |> select(yr, l.dw, esdl),
+    zooc.anu    |> rename(c.dw = dwc, esdc = esdc) |> select(yr, c.dw, esdc),
+    fish.anu    |> rename(yr = year, fish = ft)     |> select(yr, fish)
+  ) |> reduce(full_join, by = "yr")
+  
+  # --- Fish with one year lag (added separately as it shifts the yr key) ---
+  fish.lag = fish.anu |>
+    rename(fish.lag = ft) |>  
+    mutate(yr = year + 1)  |>
+    select(yr, fish.lag)
+  
+  anu.data = anu.data |> full_join(fish.lag, by = "yr")
+  
+  return(anu.data)
+}
+
+anu.data.mean = build_anu_df('mean')
+anu.data.sum  = build_anu_df('sum')
+## ----
+
 ## Annual means using monthly series ----
 n.anu = ddply(n.series, .(yr), summarize, nm = mean( dmn, na.rm = T ) )
 p.anu = ddply(p.series, .(yr), summarize, pm = mean( dmn, na.rm = T ) )
@@ -866,166 +973,276 @@ zooc.anu = ddply(zoocm[ind.remove,], .(yr), summarize,
                  #dwc = mean( dw, na.rm=T),
                  esdc = mean( log( (sze * 3/4/pi)**(1/3)*2 ), na.rm = T) )
 
-# ind.remove = which(zoohlm$yr > 2015) # Extreme point first year 
-# zoohl.anu = ddply(zoohlm[ind.remove,], .(yr), summarize, 
-#                   dwc = mean( log( dw +1), na.rm=T),
-#                   esdc = mean( log( (sze * 3/4/pi)**(1/3)*2 ), na.rm = T) )
-
 fish.anu = ddply( dataf, .(year), summarize, 
                   ft = mean( log(t +1), na.rm = T ) )
 ## ----
 
-## Checking correlations on the annual scale ----
-anu.data = phytos.anu # New data frame containing everything
-anu.data$biocl = NA ; anu.data$biocl[which(anu.data$yr %in% phytol.anu$yr)] = phytol.anu$biocl
-anu.data$esd.phyl = NA ; anu.data$esd.phyl[which(anu.data$yr %in% phytol.anu$yr)] = phytol.anu$esd.phyl
+## Building the complete annual dataset ----
+anu.data = list(
+  phytos.anu,
+  phytol.anu  |> select(yr, biocl, esd.phyl),
+  phytall.anu |> rename(bioca = biocl, esd.phya = esd.phyl) |> select(yr, bioca, esd.phya),
+  dfll.anu    |> rename(dfllc = dflcl) |> select(yr, dfllc, esd.dfll),
+  dfls.anu    |> rename(dflsc = dflcs) |> select(yr, dflsc, esd.dfls),
+  t.anu       |> rename(temp = tm)     |> select(yr, temp),
+  n.anu       |> rename(n = nm)        |> select(yr, n),
+  p.anu       |> rename(p = pm)        |> select(yr, p),
+  si.anu      |> rename(si = sim)      |> select(yr, si),
+  spm.anu     |>                          select(yr, spm),
+  sal.anu     |>                          select(yr, sal),
+  l.anu       |> rename(lm = l)        |> select(yr, lm),
+  zoos.anu    |> rename(s.dw = dws, esds = esds) |> select(yr, s.dw, esds),
+  zool.anu    |> rename(l.dw = dwl, esdl = esdl) |> select(yr, l.dw, esdl),
+  zooc.anu    |> rename(c.dw = dwc, esdc = esdc) |> select(yr, c.dw, esdc),
+  fish.anu    |> rename(yr = year, fish = ft)     |> select(yr, fish)
+) |> reduce(full_join, by = "yr")
 
-anu.data$bioca = NA ; anu.data$bioca[which(anu.data$yr %in% phytall.anu$yr)] = phytall.anu$biocl
-anu.data$esd.phya = NA ; anu.data$esd.phya[which(anu.data$yr %in% phytall.anu$yr)] = phytall.anu$esd.phyl
+# --- Fish with one year lag (added separately as it shifts the yr key) ---
+fish.lag = fish.anu |>
+  rename(fish.lag = ft) |>  
+  mutate(yr = year + 1)  |>
+  select(yr, fish.lag)
 
-anu.data$dfllc = NA ; anu.data$dfllc[which(anu.data$yr %in% dfll.anu$yr)] = dfll.anu$dflcl
-anu.data$esd.dfll = NA ; anu.data$esd.dfll[which(anu.data$yr %in% dfll.anu$yr)] = dfll.anu$esd.dfll
+anu.data = anu.data |> full_join(fish.lag, by = "yr")
 
-anu.data$dflsc = NA ; anu.data$dflsc[which(anu.data$yr %in% dfls.anu$yr)] = dfls.anu$dflcs
-anu.data$esd.dfls = NA ; anu.data$esd.dfls[which(anu.data$yr %in% dfls.anu$yr)] = dfls.anu$esd.dfls
 
-anu.data$temp = NA ; anu.data$temp[which(anu.data$yr %in% t.anu$yr)] = t.anu$tm
-anu.data$n = NA ; anu.data$n[which(anu.data$yr %in% n.anu$yr)] = n.anu$nm
-anu.data$p = NA ; anu.data$p[which(anu.data$yr %in% p.anu$yr)] = p.anu$pm
-anu.data$si = NA ; anu.data$si[which(anu.data$yr %in% si.anu$yr)] = si.anu$sim
-anu.data$spm = NA ; anu.data$spm[which(anu.data$yr %in% spm.anu$yr)] = spm.anu$spm
-anu.data$sal = NA ; anu.data$sal[which(anu.data$yr %in% sal.anu$yr)] = sal.anu$sal
-anu.data$lm = NA ; anu.data$lm[which(anu.data$yr %in% l.anu$yr)] = l.anu$l # Last NaN disarded
 
-anu.data$s.dw = NA ; anu.data$s.dw[which(anu.data$yr %in% zoos.anu$yr)] = zoos.anu$dws
-anu.data$esds = NA ; anu.data$esds[which(anu.data$yr %in% zoos.anu$yr)] = zoos.anu$esds
-
-anu.data$l.dw = NA ; anu.data$l.dw[which(anu.data$yr %in% zool.anu$yr)] = zool.anu$dwl
-anu.data$esdl = NA ; anu.data$esdl[which(anu.data$yr %in% zool.anu$yr)] = zool.anu$esdl
-
-anu.data$c.dw = NA ; anu.data$c.dw[which(anu.data$yr %in% zooc.anu$yr)] = zooc.anu$dwc
-anu.data$esdc = NA ; anu.data$esdc[which(anu.data$yr %in% zooc.anu$yr)] = zooc.anu$esdc
-
-#anu.data$hl.dw = NA ; anu.data$hl.dw[which(anu.data$yr %in% zoohl.anu$yr)] = zoohl.anu$dwc
-#anu.data$esdhl = NA ; anu.data$esdhl[which(anu.data$yr %in% zoohl.anu$yr)] = zoohl.anu$esdc
-
-anu.data$fish = NA ; anu.data$fish[which(anu.data$yr %in% fish.anu$year)] = fish.anu$ft[which(fish.anu$year %in% anu.data$yr)]
-
-# Adding Fish planktivores with one year lag 
-anu.data$flag = NA
-anu.data$flag[which(anu.data$yr %in% ( fish.anu$year +1) )] = fish.anu$ft[which( (fish.anu$year +1) %in% anu.data$yr)]
-
-nvar = ncol(anu.data) -1 
-cor.frame.anu = matrix(nrow = nvar, ncol = nvar) ; names.test = names(anu.data)[-1]
-rownames(cor.frame.anu) = names.test ; colnames(cor.frame.anu) = names.test
-
-p.frame.anu = matrix(nrow = nvar, ncol = nvar) 
-rownames(p.frame.anu) = names.test ; colnames(p.frame.anu) = names.test
-
-for( ii in ( 1:length(names.test) ) ){
-  for( ij in ( 1:length(names.test) ) ){
-    v1 = anu.data[, ii+1] ; v2 = anu.data[, ij+1]
-    ctc = cor.test( v1, v2, method = "spearman", use = "complete.obs" )
-    cor.frame.anu[ii, ij] = round(ctc$estimate, 2)
-    p.frame.anu[ii, ij] = ctc$p.value
-  } } # Computing spearman correlations and p.values
-
-# Correlations using the inverse
-nvar = ncol(anu.data) -1 
-corinv.frame.anu = matrix(nrow = nvar, ncol = nvar) ; names.test = names(anu.data)[-1]
-rownames(corinv.frame.anu) = names.test ; colnames(corinv.frame.anu) = names.test
-
-pinv.frame.anu = matrix(nrow = nvar, ncol = nvar) 
-rownames(pinv.frame.anu) = names.test ; colnames(pinv.frame.anu) = names.test
-
-for( ii in ( 1:length(names.test) ) ){
-  for( ij in ( 1:length(names.test) ) ){
-    v1 = anu.data[, ii+1] ; v2 = anu.data[, ij+1]
-    ctc = cor.test( 1/v1, v2, method = "spearman", use = "complete.obs" )
-    corinv.frame.anu[ii, ij] = round(ctc$estimate, 2)
-    pinv.frame.anu[ii, ij] = ctc$p.value
-  } } # Computing spearman correlations and p.values
 ## ----
+
+names.test = c("temp", "lm", "n", "p", "si", "biocs", "biocl", "dflsc",   
+               "s.dw", "l.dw", "c.dw", "fish", "fish.lag")
+
+named_matrix = function(names) {
+  matrix(nrow = length(names), ncol = length(names),
+         dimnames = list(names, names))
+}
+
+## Checking correlations on the annual scale ----
+
+# Chelton (1983) effective sample size
+chelton.neff = function(x, y, max_lag = 1) {
+  n = length(x)
+  if (is.null(max_lag)) max_lag = floor(n / 2)
+  max_lag = min(max_lag, n - 2)            # guard against short series
+  
+  acf.x = acf(x, lag.max = max_lag, plot = FALSE)$acf[,,1]
+  acf.y = acf(y, lag.max = max_lag, plot = FALSE)$acf[,,1]
+  
+  # Lag-0 term + both sides of the symmetric ACF
+  sum.acf = 1 +
+    2 * sum(acf.x[2:(max_lag + 1)] * acf.y[2:(max_lag + 1)])
+  
+  n.eff = n / sum.acf
+  return(max(2, min(round(n.eff), n)))     # clamp between 2 and n
+}
+
+# Recompute p-value from Spearman r using n_eff degrees of freedom
+neff.p = function(r, n.eff) {
+  df  = n.eff - 2
+  if (df < 1) return(NA)
+  t   = r * sqrt(df / (1 - r^2))
+  p   = 2 * pt(abs(t), df = df, lower.tail = FALSE)
+  return(p)
+}
+
+# Bootstrapping
+block_boot_cor = function(x, y, block_length = NULL,
+                          n_boot = 1000, ci_level = 0.95) {
+  
+  dt = na.omit(data.frame(x = x, y = y))
+  n  = nrow(dt)
+  if (is.null(block_length)) block_length = max(2, round(n^(1/3)))
+  
+  obs_r = cor.test(dt$x, dt$y, method = "spearman")
+  
+  obs_r$n_eff = chelton.neff(dt$x, dt$y) # N effective after autocorrelation correction
+  obs_r$p.value.corrected = neff.p(obs_r$estimate, obs_r$n_eff) # Corrected p-value
+  
+  # --- Manual stationary block bootstrap ---
+  starts   = 1:(n - block_length + 1)
+  n_blocks = ceiling(n / block_length)
+  
+  boot_r = replicate(n_boot, {
+    idx = unlist(lapply(sample(starts, n_blocks, replace = TRUE),
+                        function(s) s:(s + block_length - 1)))
+    idx = idx[1:n]
+    cor(dt$x[idx], dt$y[idx], method = "spearman")
+  })
+  
+  # --- p-value ---
+  # boot_r_h0 = boot_r - mean(boot_r)
+  # p_val     = mean(abs(boot_r_h0) >= abs(obs_r$estimate))
+  
+  # --- CI ---
+  alpha = 1 - ci_level
+  ci    = quantile(boot_r, probs = c(alpha / 2, 1 - alpha / 2))
+  # ci    = mean(boot_r) + c(   1.96 * sd(boot_r) / sqrt(n_boot),
+  #                           - 1.96 * sd(boot_r) / sqrt(n_boot)  )
+  
+  # --- Output ---
+  results = list(
+    observed_r  = round(obs_r$estimate, 4),
+    ci_r        = ci,
+    observed_p  = round(obs_r$p.value, 4),
+    n_eff_corrected_p  = round(obs_r$p.value.corrected, 4),
+    n           = n,
+    n_eff       = obs_r$n_eff,
+    n_boot      = n_boot,
+    ci_level    = ci_level
+  )
+  
+  #hist(boot_r)
+  return(results)
+}
+
+LOO_ST = function(x,y){
+  dt = na.omit(data.frame(x = x, y = y))
+  
+  p.seq = numeric(length(dt$x))
+  cor.seq = numeric(length(dt$x))
+  
+  for(il in 1:length(dt$x)){
+    cti = cor.test(dt$x[-il], dt$y[-il], method='spearman')
+    p.seq[il] = cti$p.value
+    cor.seq[il] = cti$estimate
+  }
+  
+  return( data.frame(p=p.seq, r=cor.seq) )
+} # Leave-One-Out sensitivity test
+
+## Bottom-up is using the annual sums: anu.data.sum
+cor.frame.anu = named_matrix(names.test)
+p.frame.anu   = named_matrix(names.test)
+ci.frame.anu  = named_matrix(names.test)
+loo.frame.anu = named_matrix(names.test)
+n.frame.anu = named_matrix(names.test)
+n_eff.frame.anu = named_matrix(names.test)
+
+for( ii in seq_len(length(names.test)) ){
+  for( ij in 1:ii ){
+    v1 = anu.data.sum[[names.test[ii]]] ; v2 = anu.data.sum[[names.test[ij]]]
+    ctc = block_boot_cor(v1, v2, n_boot=1000, ci_level = 0.9)
+
+    cor.frame.anu[ii, ij] = round(ctc$observed_r, 2)
+    #p.frame.anu[ii, ij] = ctc$observed_p
+    p.frame.anu[ii, ij] = ctc$n_eff_corrected_p
+    ci.frame.anu[ii, ij] = paste('[', round(ctc$ci_r[1], 2), ';', 
+                                 round(ctc$ci_r[2], 2), ']', sep='')
+    
+    n.frame.anu[ii, ij] = ctc$n
+    n_eff.frame.anu[ii, ij] = ctc$n_eff
+    
+    # LOO sensitivity test
+    loo.ij = LOO_ST(v1, v2)
+    if( all( sign(loo.ij$r) == sign(ctc$observed_r) ) & all(loo.ij$p<0.1) ){
+      loo.frame.anu[ii, ij] = T
+    }else{loo.frame.anu[ii, ij] = F}
+      
+  } } # Computing Spearman correlations and p.values
+
+## Top-down is using the annual means: anu.data.mean
+# Correlations using the inverse
+cor.inv.frame.anu = named_matrix(names.test)
+p.inv.frame.anu   = named_matrix(names.test)
+ci.inv.frame.anu  = named_matrix(names.test)
+loo.inv.frame.anu = named_matrix(names.test)
+n.inv.frame.anu = named_matrix(names.test)
+n_eff.inv.frame.anu = named_matrix(names.test)
+
+for( ii in seq_len(length(names.test)) ){
+  for( ij in ii:length(names.test) ){
+    v1 = 1/anu.data.mean[[names.test[ii]]] ; v2 = anu.data.mean[[names.test[ij]]]
+    ctc = block_boot_cor(v1, v2, n_boot=1000, ci_level = 0.9)
+    
+    cor.inv.frame.anu[ii, ij] = round(ctc$observed_r, 2)
+    #p.inv.frame.anu[ii, ij] = ctc$observed_p
+    p.inv.frame.anu[ii, ij] = ctc$n_eff_corrected_p
+    ci.inv.frame.anu[ii, ij] = paste('[', round(ctc$ci_r[1], 2), ';', 
+                                 round(ctc$ci_r[2], 2), ']', sep='')
+    
+    n.inv.frame.anu[ii, ij] = ctc$n
+    n_eff.inv.frame.anu[ii, ij] = ctc$n_eff
+    
+    # LOO sensitivity test !!
+    loo.ij = LOO_ST(v1, v2)
+    if( all( sign(loo.ij$r) == sign(ctc$observed_r) ) & all(loo.ij$p<0.1) ){
+      loo.inv.frame.anu[ii, ij] = T
+    }else{loo.inv.frame.anu[ii, ij] = F}
+    
+  } } # Computing Spearman correlations and p.values
+
+## ----
+
+## Make a compilation of the correlations: BU below the diagonal, and TD above
+BU_TD_matrix = function(dt, dtinv){ # Old
+  dt = as.data.frame(dt); dtinv = as.data.frame(dtinv)
+  dt.f = dt
+  dt.f[ row(dt.f) < col(dt.f) ] = dtinv[ row(dt.f) < col(dt.f) ]
+  dt.f[ row(dt.f) == col(dt.f) ] = NA
+  dt.f$var        = rownames(dt.f)
+  return(dt.f)
+}
+
+# BU_TD_matrix = function(dt, dtinv){
+#   dt = as.data.frame(dt); dtinv = as.data.frame(dtinv)
+#   dt$control    = 'Bottom-up'
+#   dt$var        = rownames(dt)
+#   dtinv$control = 'Top-down'
+#   dtinv$var        = rownames(dtinv)
+#   return( rbind(dtinv, dt) )
+# }
+
+write.csv( BU_TD_matrix(cor.frame.anu, cor.inv.frame.anu), file='~/PhD/Work/Food web analysis - Paper 1/gits/cor_annual.csv', row.names=F)
+write.csv( BU_TD_matrix(p.frame.anu, p.inv.frame.anu), file='~/PhD/Work/Food web analysis - Paper 1/gits/p_annual.csv', row.names=F)
+write.csv( BU_TD_matrix(ci.frame.anu, ci.inv.frame.anu), file='~/PhD/Work/Food web analysis - Paper 1/gits/ci_annual.csv', row.names=F)
+write.csv( BU_TD_matrix(loo.frame.anu, loo.inv.frame.anu), file='~/PhD/Work/Food web analysis - Paper 1/gits/loo_annual.csv', row.names=F)
+write.csv( BU_TD_matrix(n.frame.anu, n.inv.frame.anu), file='~/PhD/Work/Food web analysis - Paper 1/gits/n_annual.csv', row.names=F)
+write.csv( BU_TD_matrix(n_eff.frame.anu, n_eff.inv.frame.anu), file='~/PhD/Work/Food web analysis - Paper 1/gits/neff_annual.csv', row.names=F)
 
 # Correlations on annual means (spearman) are available in cor.frame.anu
 # The p-values are in p.frame.anu
 
-plot.table.anu = function( corrdt, corrinvdt, symetric = T ){
-  corr = round( as.data.frame( corrdt[[1]] ), 2) # Extracting the R2 and p-values
-  p = as.data.frame( corrdt[[2]] )
-  
-  corrinv = round( as.data.frame( corrinvdt[[1]] ), 2) # Extracting the R2 and p-values
-  pinv = as.data.frame( corrinvdt[[2]] )
-  
-  ## Selecting the variables to extract (season dataframes)
-  rown = c( "lm", "n", "p", "si", "biocs", "biocl",
-            "dflsc", "dfllc", "s.dw", "l.dw", "c.dw", 'flag' ) # Rows to look at
-  cn = rown
-  
-  if(!symetric){cn = rown}
-  
-  corr = corr[ rown, cn ]
-  p = p[ rown, cn ]
-  
-  corrinv = corrinv[ rown, cn ]
-  pinv = pinv[ rown, cn ]
-  
-  # Rename the variables
-  rown = c( "Light", "NO3", "PO4", "SiO2", "S.phy", "L.phy",
-            "S.dfl", "L.dfl", "S.zoo", "L.zoo", "C.zoo", "Herring larvae" )
-  rownames(corr) = rown
-  names(corr) = rown
-  
-  if(!symetric){names(corr) = rown}
-  
-  ## Prepare the table, and replace with 1/X for 
-  corrf = corr
-  pf = p
-  
-  # Prints only one side of the correlation table
-  if( symetric ){
-    ind = which( row( corrf ) <= col(corrf), arr.ind = T )
-    corrf[ind] = "-"
-    pf[ind] = 1}
-  
-  # Add predator 1/X
-  corrf[2:4, 5:6] = corrinv[2:4, 5:6] # Nutrients and phytoplankton
-  corrf[5, 7] = corrinv[5, 7]   # Dinoflagellates and Phytoplankton
-  corrf[5:8, 9] = corrinv[5:8, 9]   # S zoo
-  corrf[5:9, 10] = corrinv[5:9, 10] # L zoo
-  corrf[7:10, 11] = corrinv[7:10, 11] # C zoo
-  corrf[7:10, 12] = corrinv[7:10, 12] # Herr
-  
-  pf[2:4, 5:6] = pinv[2:4, 5:6] # Nutrients and phytoplankton
-  pf[5, 7] = pinv[5, 7]   # Dinoflagellates and Phytoplankton
-  pf[5:8, 9] = pinv[5:8, 9]   # S zoo
-  pf[5:9, 10] = pinv[5:9, 10] # L zoo
-  pf[7:10, 11] = pinv[7:10, 11] # C zoo
-  pf[7:10, 12] = pinv[7:10, 12] # Herr
+plot.table.anu = function( cor.frame.anu, cor.inv.frame.anu, p.frame.anu, p.inv.frame.anu ){
+  cor.frame = BU_TD_matrix(cor.frame.anu, cor.inv.frame.anu)
+  p.frame = BU_TD_matrix(p.frame.anu, p.inv.frame.anu)
   
   ## Print the significance level on the table
   # p < 0.1
-  ind = which(pf < 0.1 & pf > 0.05, arr.ind = T)
-  corrf[ind] = paste( corrf[ind], "*", sep = "" )
+  ind = which(p.frame < 0.1 & p.frame > 0.05, arr.ind = T)
+  cor.frame[ind] = paste( cor.frame[ind], "*", sep = "" )
   
   # p < 0.05
-  ind = which(pf < 0.05 & pf > 0.01, arr.ind = T)
-  corrf[ind] = paste( corrf[ind], "**", sep = "" )
+  ind = which(p.frame < 0.05 & p.frame > 0.01, arr.ind = T)
+  cor.frame[ind] = paste( cor.frame[ind], "**", sep = "" )
   
   # p < 0.01
-  ind = which(pf < 0.01, arr.ind = T)
-  corrf[ind] = paste( corrf[ind], "***", sep = "" )
+  ind = which(p.frame < 0.01, arr.ind = T)
+  cor.frame[ind] = paste( cor.frame[ind], "***", sep = "" )
   
-  corrf=corrf[-1,]
+  #cor.frame=cor.frame[-1,]
+  
+  # Reshape the table
+  rown = c( "lm", "n", "p", "si", "biocs", "biocl",
+            "dflsc", "s.dw", "l.dw", "c.dw", "fish.lag" )
+  cor.frame = cor.frame[rown, rown]
+  
+  # Rename the variables
+  rown = c( "Light", "NO3", "PO4", "SiO2", "S.phy", "L.phy",
+            "Dfl", "S.zoo", "L.zoo", "C.zoo", "Herring larvae" )
+  rownames(cor.frame) = rown
+  colnames(cor.frame) = rown
   
   ## Print the table
   x11(width = 12, height = 8)
-  grid.table(corrf)
+  grid.table(cor.frame)
   
-  return(corrf)
+  return(cor.frame)
 }
 
-corr.anu.f = plot.table.anu( list(cor.frame.anu, p.frame.anu), list(corinv.frame.anu, pinv.frame.anu) )
+corr.anu.f = plot.table.anu( cor.frame.anu, cor.inv.frame.anu, p.frame.anu, p.inv.frame.anu )
+
+dev.copy2pdf(file='~/anu_corr_west.pdf')
+dev.off()
 
 ### Annual time series ----
 smooth.lines = function(points, data, colo, span=0.05, points.p = T ){
@@ -1093,10 +1310,6 @@ smooth.lines(anu.data$yr, scale(anu.data$flag) +stackl[5], span = 0.3, colo = "g
 mtext( side = 2, "Normalized Log Annual Concentration", cex = 1.5, line = 1.6 )
 
 # Trophic labels
-# text( x = 2016.5, y = 1.2, 
-#       expression( "NO"[3]^-"" ), col = "darkblue", cex = 1.5, xpd = T )
-# text( x = 2018.5, y = -0.2, 
-#       expression( "PO"[4]^3-"" ), col = "dodgerblue", cex = 1.5, xpd = T )
 text( x = 2014.2, y = 0.5, 
       expression( "NO"[3]^"-" ), col = "darkblue", cex = 1.5, xpd = T )
 text( x = 2016.5, y = 1.6, 
@@ -1125,84 +1338,132 @@ text( x = 2014.4, y = 17.8, "Herring\nlarvae", col = "gray30", cex = 1.5, xpd = 
 
 #### New way to sample and compute the rates ####
 
-# Data extraction function
-impute.nan = function(date.seas, v.seas, clim.mth, clim.v, date.series, v.series){
+# Data extraction function - Test different schemes with fill.NAs
+impute.nan = function(date.seas, v.seas, clim.mth, clim.v, date.series, v.series, fill.NAs){
   ind = which( is.na(v.seas) )
   
-  if( length(ind) > 0 ){
+  if(fill.NAs == 'joint'){
     v.approx = approx(x = ymd(date.series), y = v.series, xout = ymd(date.seas))$y
     
+    if( length(ind) > 0 & length(v.approx) > 0 ){
+      
+      for(ii in ind){
+        ind.clim = which( clim.mth == month(date.seas[ii]) )
+        
+        if(length(ind.clim)>0){
+          v.seas[ii] = ( clim.v[ind.clim] + v.approx[ii] ) / 2
+          }else{ v.seas[ii] = v.approx[ii] }
+        #v.seas[ii] = mean( c(clim.v[ind.clim], v.approx[ii]), na.rm=T ) # Modifies the result in the classic case
+      }
+    }
+    
+  }else if(fill.NAs == 'linear'){
+    v.approx = approx(x = ymd(date.series), y = v.series, xout = ymd(date.seas))$y
+    v.seas[ind] = v.approx[ind]
+  
+  }else if(fill.NAs == 'climat'){
     for(ii in ind){
       ind.clim = which( clim.mth == month(date.seas[ii]) )
-      v.seas[ii] = ( clim.v[ind.clim] + v.approx[ii] ) / 2
+      v.seas[ii] = clim.v[ind.clim]
     }
+  
+  }else if(fill.NAs == 'spline'){ # @TODO Not working
+    df.series = data.frame(x = ymd(date.series), y = v.series)
+    
+    #plot(ymd(date.series), v.series)
+    for(yi in unique(year(date.seas))){ # Apply the splines per year, the TS is discontinuous
+      dfi = df.series[which(year(df.series$x) == yi),]
+      ind.seas = intersect(ind, which(year(date.seas) == yi))
+      
+      if( nrow(dfi)>4 & length(ind.seas)>0 ){
+        #print(dfi[c('x', 'y')])
+        spline_model = lm(y ~ ns(x, df=3), data=dfi)
+        #spline_model = lm(y ~ bs(x, degree=3), data=dfi)
+        
+        new.dfi = data.frame(x = ymd(date.seas)[ind.seas] )
+        pred.spline = predict(spline_model, newdata = new.dfi)
+        
+        # Further check by deleting any extreme values (outside what the measured range)
+        pred.spline[ pred.spline>max(dfi$y, na.rm=T) | pred.spline<min(dfi$y, na.rm=T) ] = NA
+        v.seas[ind.seas] = pred.spline
+        
+        #lines(ymd(dfi$x), predict(spline_model), col='red')
+      }
+    }
+    
   }
   return(v.seas)
 }
 
-fill.nan.days = function(frame){
+fill.nan.days = function(frame, method.fill){
   datei = frame$date
   for( vi in names(frame) ){
     if(vi == "biocs"){
       vclim = phys.clim
       vday = phys.day
-      frame[vi] = impute.nan(datei, frame[[vi]], vclim$mth,  log(vclim$bmean), vday$date, vday$biocs)
+      frame[vi] = impute.nan(datei, frame[[vi]], vclim$mth,  log(vclim$bmean), vday$date, vday$biocs, method.fill)
     }
     if(vi == "biocl"){
       vclim = phyl.clim
       vday = phyl.day
-      frame[vi] = impute.nan(datei, frame[[vi]], vclim$mth,  log(vclim$bmean), vday$date, vday$biocl)
+      frame[vi] = impute.nan(datei, frame[[vi]], vclim$mth,  log(vclim$bmean), vday$date, vday$biocl, method.fill)
     }
     if(vi == "dflsc"){
       vclim = dflsm.clim
       vday = dfls.day
-      frame[vi] = impute.nan(datei, frame[[vi]], vclim$mth,  log(vclim$bmean), vday$date, vday$dflsc)
+      frame[vi] = impute.nan(datei, frame[[vi]], vclim$mth,  log(vclim$bmean), vday$date, vday$dflsc, method.fill)
     }
     if(vi == "dfllc"){
       vclim = dfllm.clim
       vday = dfll.day
-      frame[vi] = impute.nan(datei, frame[[vi]], vclim$mth,  log(vclim$bmean), vday$date, vday$dfllc)
+      frame[vi] = impute.nan(datei, frame[[vi]], vclim$mth,  log(vclim$bmean), vday$date, vday$dfllc, method.fill)
     }
     if(vi == "s.dw"){
       vclim = zoos.clim
       vday = zoos.day
-      frame[vi] = impute.nan(datei, frame[[vi]], vclim$mth,  log(vclim$dw+1), vday$Date, vday$dw)
+      frame[vi] = impute.nan(datei, frame[[vi]], vclim$mth,  log(vclim$dw+1), vday$Date, vday$dw, method.fill)
     }
     if(vi == "l.dw"){
       vclim = zool.clim
       vday = zool.day
-      frame[vi] = impute.nan(datei, frame[[vi]], vclim$mth,  log(vclim$dw+1), vday$Date, vday$dw)
+      frame[vi] = impute.nan(datei, frame[[vi]], vclim$mth,  log(vclim$dw+1), vday$Date, vday$dw, method.fill)
     }
     if(vi == "c.dw"){
       vclim = zooc.clim
       vday = zooc.day
-      frame[vi] = impute.nan(datei, frame[[vi]], vclim$mth,  log(vclim$dw+1), vday$Date, vday$dw)
+      frame[vi] = impute.nan(datei, frame[[vi]], vclim$mth,  log(vclim$dw+1), vday$Date, vday$dw, method.fill)
     }
     if(vi == "hl.dw"){
       vclim = zoohl.clim
       vday = zoohl.day
-      frame[vi] = impute.nan(datei, frame[[vi]], vclim$mth,  log(vclim$dw+1), vday$Date, vday$dw)
+      frame[vi] = impute.nan(datei, frame[[vi]], vclim$mth,  log(vclim$dw+1), vday$Date, vday$dw, method.fill)
     }
     if(vi == "n"){
       vclim = n.clim
       vday = nut.day
-      frame[vi] = impute.nan(datei, frame[[vi]], vclim$mth, vclim$dmn, vday$date, vday$n)
+      frame[vi] = impute.nan(datei, frame[[vi]], vclim$mth, vclim$dmn, vday$date, vday$n, method.fill)
     }
     if(vi == "p"){
       vclim = p.clim
       vday = nut.day
-      frame[vi] = impute.nan(datei, frame[[vi]], vclim$mth, vclim$dmn, vday$date, vday$p)
+      frame[vi] = impute.nan(datei, frame[[vi]], vclim$mth, vclim$dmn, vday$date, vday$p, method.fill)
     }
     if(vi == "lm"){
       vclim = l.clim
       vday = nut.day
-      frame[vi] = impute.nan(datei, frame[[vi]], vclim$mth, vclim$lm, vday$date, vday$lm)
+      frame[vi] = impute.nan(datei, frame[[vi]], vclim$mth, vclim$lm, vday$date, vday$lm, method.fill)
     }
   }
   return(frame)
 }
 
-season.extract.days = function(season.f, date.extend=0){
+# Method: 
+# joint (linear approximation + climatology)
+# linear (only linear approximation)
+# climat (only climatology)
+# spline (splines with 2nd polynomial)
+# none
+season.extract.days = function(season.f, date.extend=0, method='joint'){
   
   season.f$yr = year( season.f$date ) #; low.dates = ret$date[s.dates] # Classic frame
   sp.sum = data.frame() ; at.sum = data.frame() # Placeholders
@@ -1302,17 +1563,7 @@ season.extract.days = function(season.f, date.extend=0){
     
     zooc.sw = zooc.day[ which( zooc.day$Date %in% date.sw ), ]
     names(zooc.sw) = c( "date", "c.dw", "c.esd", "yr", "mth" )
-    
-    # HTL zooplankton
-    # zoohl.sp = zoohl.day[ which( zoohl.day$Date %in% date.sp ), ]
-    # names(zoohl.sp) = c( "date", "hl.dw", "hl.esd", "yr", "mth" )
-    # 
-    # zoohl.at = zoohl.day[ which( zoohl.day$Date %in% date.at ), ]
-    # names(zoohl.at) = c( "date", "hl.dw", "hl.esd", "yr", "mth" )
-    # 
-    # zoohl.sw = zoohl.day[ which( zoohl.day$Date %in% date.sw ), ]
-    # names(zoohl.sw) = c( "date", "hl.dw", "hl.esd", "yr", "mth" )
-    
+       
     # Creating temporal variables for storing in a dataframe
     mthsp = month(date.sp) ; mthat = month(date.at) ; mthsw = month(date.sw)
     
@@ -1342,7 +1593,6 @@ season.extract.days = function(season.f, date.extend=0){
       all.at = merge( all.at, zoos.at[ c("date", "s.dw", "s.esd") ], by = "date", all.x = T )
       all.at = merge( all.at, zooc.at[ c("date", "c.dw", "c.esd") ], by = "date", all.x = T )
       all.at = merge( all.at, zool.at[ c("date", "l.dw", "l.esd") ], by = "date", all.x = T )
-      #all.at = merge( all.at, zoohl.at[ c("date", "hl.dw", "hl.esd") ], by = "date", all.x = T )
       at.sum = rbind( at.sum, all.at )
     }
     # Autumn ----
@@ -1357,8 +1607,6 @@ season.extract.days = function(season.f, date.extend=0){
       all.sw = merge( all.sw, zoos.sw[ c("date", "s.dw", "s.esd") ], by = "date", all.x = T )
       all.sw = merge( all.sw, zooc.sw[ c("date", "c.dw", "c.esd") ], by = "date", all.x = T )
       all.sw = merge( all.sw, zool.sw[ c("date", "l.dw", "l.esd") ], by = "date", all.x = T )
-      #all.sw = merge( all.sw, zoohl.sw[ c("date", "hl.dw", "hl.esd") ], by = "date", all.x = T )
-      #all.sw$dur = NA ; all.sw$dur = dur.sw
       sw.sum = rbind( sw.sum, all.sw )
     }
     # After spring ----
@@ -1378,13 +1626,13 @@ season.extract.days = function(season.f, date.extend=0){
     sw.sum = sw.sum[-ind,]}
   
   # Data imputation using 50% climatology and 50% regression
-  sp.sum = fill.nan.days(sp.sum)
-  at.sum = fill.nan.days(at.sum)
-  sw.sum = fill.nan.days(sw.sum)
+  sp.sum = fill.nan.days(sp.sum, method)
+  at.sum = fill.nan.days(at.sum, method)
+  sw.sum = fill.nan.days(sw.sum, method)
   
   return( list( sp.sum, at.sum, sw.sum ) ) }
 
-sb = season.extract.days(season.f, date.extend=0) # Sampling the data for spring, after spring, and autumn
+sb = season.extract.days(season.f, date.extend=0, method='joint') # Sampling the data for spring, after spring, and autumn
 sp.sum = sb[[1]] ; at.sum = sb[[2]] ; sw.sum = sb[[3]]
 # Spring           Autumn             After spring
 
@@ -1398,15 +1646,24 @@ saturation.nutrients = function(esd, n, p){
   alpha.p = -1.4
   beta.p = 0.41
   
-  Kn = 10**alpha.n * vol**beta.n # Half saturation, in mu mol.L-1
+  Kn = 10**alpha.n * vol**beta.n      # Half saturation, in mu mol.L-1
   Kp = 10**alpha.p * vol**beta.p 
+  max_growth = 10**0.7 * vol**(-0.24) # Max growth rate of phytoplankton
   
-  saturation.n = n / (Kn + n)
-  saturation.p = p / (Kp + p)
+  # Wirtz and Kerimoglu, 2016
+  # saturation.n = n / (Kn + n)
+  # saturation.p = p / (Kp + p)
+  # 
+  # saturation = data.frame( n=saturation.n, p=saturation.p )
+  # 
+  # saturation = 1 / (1/saturation$n + 1/saturation$p)
   
-  saturation = data.frame( n=saturation.n, p=saturation.p )
+  # Omta et al, 2008
+  saturation.n = n / Kn
+  saturation.p = p / Kp
 
-  saturation = 1 / (1/saturation$n + 1/saturation$p)
+  #saturation = max_growth / (1 + 1/saturation.n + 1/saturation.p - 1/(saturation.n + saturation.p))
+  saturation = 1 / (1 + 1/saturation.n + 1/saturation.p - 1/(saturation.n + saturation.p))
   
   ind = is.infinite(saturation)
   if(length(ind)>0){
@@ -1519,7 +1776,7 @@ mov.avg = function(datel, datal, wind, forecast){
   return(df)
 }
 
-seas.avg = function(frame, wind = 7, forecast=F){
+seas.avg = function(frame, wind=7, forecast=F){
   datef = frame$date
   
   ind.no = which( names(frame) == 'date' )
@@ -1547,18 +1804,14 @@ seas.avg = function(frame, wind = 7, forecast=F){
 
 # Compute the rates and the means, with a moving average (or none)
 sp.avg = seas.avg(sp.sum, wind=30, forecast=F)
-at.avg = seas.avg(at.sum, wind=30, forecast=F)
 sw.avg = seas.avg(sw.sum, wind=30, forecast=F)
+at.avg = seas.avg(at.sum, wind=30, forecast=F)
 
 sp.avg[ which(sp.avg == 0, arr.ind = T) ] = NA
-at.avg[ which(at.avg == 0, arr.ind = T) ] = NA
 sw.avg[ which(sw.avg == 0, arr.ind = T) ] = NA
+at.avg[ which(at.avg == 0, arr.ind = T) ] = NA
 
-## Test the importance of light
-# Correlations with light
-cor.test(sp.avg$lm, sp.avg$n, use="complete.obs", method="spearman")
-cor.test(sp.avg$lm, sp.avg$p, use="complete.obs", method="spearman")
-
+## Compute the RCRs
 rate.frames = function(frame){ # Function to compute the cross-correlation matrix
   nvar = length( names(frame) )
   nyear = length( unique(frame$yr) )
@@ -1599,20 +1852,258 @@ sp.rate = rate.frames(sp.avg)
 sw.rate = rate.frames(sw.avg)
 at.rate = rate.frames(at.avg)
 
-get.cor = function(v1, v2){
+## Correlation tests
+# Namelist description of the trophic linkages for seasonal correlations
+corr.list.names = list('biocs'=c('temp', 'sat.phys', 'n', 'p', 'si', 'satl.phys', 'dflsc', 's.dw', 'l.dw'),
+                       'biocl'=c('temp', 'sat.phyl', 'n', 'p', 'si', 'satl.phyl', 'l.dw'),
+                       'dflsc'=c('temp', 'sat.dfls', 'satl.dfls', 'biocs', 's.dw', 'l.dw'),
+                       's.dw'=c('temp', 'biocs', 'dflsc', 'l.dw', 'c.dw'),
+                       'l.dw'=c('temp', 'biocs','biocl', 'dflsc', 's.dw', 'c.dw'),
+                       'c.dw'=c('temp', 's.dw', 'l.dw'))
+
+# Slightly different table with si, n, p for the SI?
+corr.rate.partial = function(frame, corr.names = corr.list.names, 
+                             fdr.level = 0.05, max_lag = NULL) {
+  
+  meanf = frame[[2]]
+  ratef = frame[[1]]
+  
+  nvar.rates      = names(corr.names)
+  nvar.predictors = unique(unlist(corr.names))
+  
+  if( length(grep('sat.',  nvar.predictors, fixed = TRUE))>0 ){
+    nvar.predictors = c(nvar.predictors[-grep('sat.',  nvar.predictors, fixed = TRUE)], 'co-limitation')
+  }
+  if( length(grep('satl.',  nvar.predictors, fixed = TRUE))>0 ){
+    nvar.predictors = c(nvar.predictors[-grep('satl.', nvar.predictors, fixed = TRUE)], 'light limitation')
+  }
+  
+  # --- Output matrices ---
+  # Bivariate
+  biv.r     = matrix(NA, nrow = length(nvar.rates), ncol = length(nvar.predictors),
+                     dimnames = list(nvar.rates, nvar.predictors))
+  biv.p     = matrix(NA, nrow = length(nvar.rates), ncol = length(nvar.predictors),
+                     dimnames = list(nvar.rates, nvar.predictors))
+  biv.p.fdr = matrix(NA, nrow = length(nvar.rates), ncol = length(nvar.predictors),
+                     dimnames = list(nvar.rates, nvar.predictors))
+  biv.neff  = matrix(NA, nrow = length(nvar.rates), ncol = length(nvar.predictors),
+                     dimnames = list(nvar.rates, nvar.predictors))
+  
+  # Partial
+  par.r     = matrix(NA, nrow = length(nvar.rates), ncol = length(nvar.predictors),
+                     dimnames = list(nvar.rates, nvar.predictors))
+  par.p     = matrix(NA, nrow = length(nvar.rates), ncol = length(nvar.predictors),
+                     dimnames = list(nvar.rates, nvar.predictors))
+  par.p.fdr = matrix(NA, nrow = length(nvar.rates), ncol = length(nvar.predictors),
+                     dimnames = list(nvar.rates, nvar.predictors))
+  par.neff  = matrix(NA, nrow = length(nvar.rates), ncol = length(nvar.predictors),
+                     dimnames = list(nvar.rates, nvar.predictors))
+  
+  # Robustness tests
+  robust      = matrix(NA, nrow = length(nvar.rates), ncol = length(nvar.predictors),
+                       dimnames = list(nvar.rates, nvar.predictors))
+  robust.fdr  = matrix(NA, nrow = length(nvar.rates), ncol = length(nvar.predictors),
+                       dimnames = list(nvar.rates, nvar.predictors))
+  robust.full = matrix(NA, nrow = length(nvar.rates), ncol = length(nvar.predictors),
+                       dimnames = list(nvar.rates, nvar.predictors))
+  
+  # --- Helper functions ---
+  
+  fix.names = function(x) {
+    x[grep('sat.',  x, fixed = TRUE)] = 'co-limitation'
+    x[grep('satl.', x, fixed = TRUE)] = 'light limitation'
+    return(x)
+  }
+  
+  get.controls = function(predictor, all.predictors) {
+    controls = all.predictors[all.predictors != predictor]
+    
+    if( !(predictor %in% c('n', 'p', 'si') ) ){
+      controls = controls[grepl('^temp$',   controls) |
+                          grepl('^sat\\.',  controls)  |
+                          grepl('^satl\\.', controls)]
+    }else{
+      controls = controls[grepl('^temp$',   controls) |
+                          grepl('^satl\\.', controls)]  
+    } # Si and other nutrients may carry redundant information, potentially invalidating the pcor test
+    # Both are unfluenced by riverine influx for example
+    return(controls)
+  }
+  
+  # Chelton (1983) effective sample size
+  chelton.neff = function(x, y, max_lag = NULL) {
+    n = length(x)
+    if (is.null(max_lag)) max_lag = floor(n / 2)
+    max_lag = min(max_lag, n - 2)            # guard against short series
+    
+    acf.x = acf(x, lag.max = max_lag, plot = FALSE)$acf[,,1]
+    acf.y = acf(y, lag.max = max_lag, plot = FALSE)$acf[,,1]
+    
+    # Lag-0 term + both sides of the symmetric ACF
+    sum.acf = 1 +
+      2 * sum(acf.x[2:(max_lag + 1)] * acf.y[2:(max_lag + 1)])
+    
+    n.eff = n / sum.acf
+    return(max(2, min(round(n.eff), n)))     # clamp between 2 and n
+  }
+  
+  # AR(1) autocorrelation correction
+  neff.ar1 = function(x, y) {
+    n    = length(na.omit(cbind(x, y)))
+    rho1.x = acf(x, lag.max = 1, plot = FALSE)$acf[2,,1]
+    rho1.y = acf(y, lag.max = 1, plot = FALSE)$acf[2,,1]
+    # Average the two lag-1 autocorrelations
+    #rho1   = sqrt(rho1.x * rho1.y)   # geometric mean, common choice, not working if one negative
+    rho1   = mean( c(rho1.x, rho1.y) )
+    n.eff  = n * (1 - rho1^2) / (1 + rho1^2)
+    return(max(2, round(n.eff)))
+  }
+  
+  # Recompute p-value from Spearman r using n_eff degrees of freedom
+  neff.p = function(r, n.eff, n.controls = 0) {
+    df  = n.eff - 2 - n.controls             # subtract controls for partial case
+    if (df < 1) return(NA)
+    t   = r * sqrt(df / (1 - r^2))
+    p   = 2 * pt(abs(t), df = df, lower.tail = FALSE)
+    return(p)
+  }
+  
+  # BH-FDR applied to non-NA entries of a matrix
+  apply.fdr = function(p.mat) {
+    p.fdr     = p.mat
+    idx       = !is.na(p.mat)
+    p.fdr[idx] = p.adjust(p.mat[idx], method = 'BH')
+    return(p.fdr)
+  }
+  
+  # --- Main loop ---
+  for (i in seq_along(nvar.rates)) {
+    
+    response.name = names(corr.names)[i]
+    yi            = ratef[[response.name]]
+    predictors    = corr.names[[i]]
+    
+    for (j in seq_along(predictors)) {
+      
+      pred.name  = predictors[j]
+      xj         = meanf[[pred.name]]
+      pred.label = fix.names(pred.name)
+      
+      # --- 1. Bivariate Spearman + n_eff correction ---
+      dt.biv = na.omit(data.frame(y = yi, x = xj))
+      if (nrow(dt.biv) < 5) next
+      
+      r.biv  = cor(dt.biv$y, dt.biv$x, method = 'spearman')
+      n.eff  = chelton.neff(dt.biv$y, dt.biv$x, max_lag)
+      #n.eff  = neff.ar1(dt.biv$y, dt.biv$x)
+      p.biv  = neff.p(r.biv, n.eff, n.controls = 0)
+      
+      biv.r[i, pred.label]    = r.biv
+      biv.p[i, pred.label]    = p.biv
+      biv.neff[i, pred.label] = n.eff
+      
+      # --- 2. Partial correlation + n_eff correction ---
+      # Test only the trophic relationships against the controls
+      controls = get.controls(pred.name, predictors)
+      
+      if (length(controls) == 0) {
+        # No controls: partial = bivariate
+        par.r[i, pred.label]    = r.biv
+        par.p[i, pred.label]    = p.biv
+        par.neff[i, pred.label] = n.eff
+        
+      } else {
+        ctrl.data  = meanf[controls]
+        dt.partial = na.omit(cbind(y = yi, x = xj, ctrl.data))
+        if (nrow(dt.partial) < length(controls) + 4) next
+        
+        pc    = pcor(dt.partial, method = 'spearman')
+        r.par = pc$estimate[1, 2]
+        
+        # n_eff based on residuals after regressing out controls (on ranks)
+        # rank.y    = rank(dt.partial[, 1])
+        # rank.x    = rank(dt.partial[, 2])
+        # rank.ctrl = apply(dt.partial[, -(1:2), drop = FALSE], 2, rank)
+        # 
+        # resid.y = residuals(lm(rank.y ~ rank.ctrl))
+        # resid.x = residuals(lm(rank.x ~ rank.ctrl))
+        # 
+        # n.eff.par = chelton.neff(resid.y, resid.x, max_lag)
+        # p.par     = neff.p(r.par, n.eff.par, n.controls = length(controls))
+        p.par = pc$p.value[1, 2]
+        
+        par.r[i, pred.label]    = r.par
+        par.p[i, pred.label]    = p.par
+        #par.neff[i, pred.label] = n.eff.par
+      }
+    }
+  }
+  
+  # --- 3. FDR correction (on n_eff-adjusted p-values) ---
+  biv.p.fdr = apply.fdr(biv.p)
+  par.p.fdr = apply.fdr(par.p)
+  
+  # --- 4. Robustness flags ---
+  for (i in seq_along(nvar.rates)) {
+    for (j in seq_along(nvar.predictors)) {
+      
+      pred.label = nvar.predictors[j]
+      
+      biv.sig     = !is.na(biv.p[i, pred.label])     && biv.p[i, pred.label]     < fdr.level
+      biv.sig.fdr = !is.na(biv.p.fdr[i, pred.label]) && biv.p.fdr[i, pred.label] < fdr.level
+      par.sig     = !is.na(par.p[i, pred.label])     && par.p[i, pred.label]     < fdr.level
+      par.sig.fdr = !is.na(par.p.fdr[i, pred.label]) && par.p.fdr[i, pred.label] < fdr.level
+      same.sign   = !is.na(biv.r[i, pred.label])     &&
+        !is.na(par.r[i, pred.label])      &&
+        sign(biv.r[i, pred.label]) == sign(par.r[i, pred.label])
+      
+      robust[i, pred.label]      = biv.sig     & par.sig     & same.sign
+      robust.fdr[i, pred.label]  = biv.sig.fdr & par.sig.fdr & same.sign
+      robust.full[i, pred.label] = biv.sig & biv.sig.fdr & par.sig & par.sig.fdr & same.sign
+    }
+  }
+  
+  # --- Re-order columns ---
+  col.order = c("temp", "light limitation", "co-limitation", 'n', 'p', 'si',
+                "biocs", "biocl", "dflsc", "s.dw", "l.dw", "c.dw")
+  col.order = col.order[col.order %in% colnames(biv.r)]
+  reorder   = function(m) m[, col.order]
+  
+  return(list(
+    bivariate.r   = reorder(biv.r),
+    bivariate.p   = reorder(biv.p),       # n_eff-adjusted p-values
+    bivariate.fdr = reorder(biv.p.fdr),   # BH-corrected n_eff p-values
+    bivariate.neff= reorder(biv.neff),    # n_eff used for each pair
+    partial.r     = reorder(par.r),
+    partial.p     = reorder(par.p),       # n_eff-adjusted partial p-values
+    partial.fdr   = reorder(par.p.fdr),   # BH-corrected n_eff partial p-values
+    #partial.neff  = reorder(par.neff),    # n_eff used for each partial test
+    robust        = reorder(robust),      # significant in bivariate + partial (n_eff p)
+    robust.fdr    = reorder(robust.fdr),  # significant in bivariate + partial (FDR p)
+    robust.full   = reorder(robust.full)  # passes all tests
+  ))
+} # With n_eff
+
+sp.rate.corr = corr.rate.partial(sp.rate, fdr.level = 0.1, max_lag = 1)
+sw.rate.corr = corr.rate.partial(sw.rate, fdr.level = 0.1, max_lag = 1)
+at.rate.corr = corr.rate.partial(at.rate, fdr.level = 0.1, max_lag = 1)
+
+get.cor = function(cor.frame, cor.variables){
   # Get correlations and p.values
   p.lab = c( "p>0.1", "p<0.1", "p<0.05", "p<0.01" )
   p.test = c( 1, 0.1, 0.05, 0.01 )
   
-  cor.st = cor.test( v1, v2, method = "spearman", use = "complete.obs" )
-  p.st = p.lab[ max( which(cor.st$p.value <= p.test ) ) ]
-  #cor.txt = paste( "r2:", round(cor.st$estimate**2, 2) , "\n", p.st, sep = "" ) # R2
-  cor.txt = paste( "r:", round(cor.st$estimate, 2) , "\n", p.st, sep = "" ) # R
+  cor.st =  cor.frame$bivariate.r[cor.variables[1], cor.variables[2]]
+  pval.st = cor.frame$bivariate.p[cor.variables[1], cor.variables[2]]
   
-  return( list(cor.txt, cor.st$p.value, cor.st$estimate) )
+  p.st = p.lab[ max( which(pval.st <= p.test ) ) ] # Text
+  cor.txt = paste( "r:", round(cor.st, 2) , "\n", p.st, sep = "" ) 
+  
+  # Cor. text, p-value, r-estimate, robust to partial correlations and autocorrelation?
+  return( list(cor.txt, pval.st, cor.st, cor.frame$robust[cor.variables[1], cor.variables[2]]) )
 }
 
-subplot.cor = function(v2, v1, xlab, ylab, line.cor, control, cex.txt = 1.3){
+subplot.cor = function(v2, v1, cor.frame, cor.variables, xlab, ylab, line.cor, control, cex.txt = 1.3){
   
   # Colors
   col.bu = rgb( 0.3, 0.3, 0.8, alpha = 0.5)
@@ -1620,12 +2111,12 @@ subplot.cor = function(v2, v1, xlab, ylab, line.cor, control, cex.txt = 1.3){
   col.unc = rgb(0.3, 0.3, 0.3, 0.5)
   col.not = rgb(0.6, 0.6, 0.6, 0.4)
   
-  cor.txt = get.cor(v1, v2)
-  if( cor.txt[[2]] < 0.1 & control == "BU" & cor.txt[[3]] > 0 ){
+  cor.txt = get.cor(cor.frame, cor.variables)
+  if( cor.txt[[2]] < 0.1 & control == "BU" & cor.txt[[3]] > 0 & cor.txt[[4]] ){
     colo = col.bu
-  }else if( cor.txt[[2]] < 0.1 & control == "TD" & cor.txt[[3]] < 0 ){
+  }else if( cor.txt[[2]] < 0.1 & control == "TD" & cor.txt[[3]] < 0 & cor.txt[[4]] ){
     colo = col.td
-  }else if( cor.txt[[2]] < 0.1 ){
+  }else if( cor.txt[[2]] < 0.1 & cor.txt[[4]] ){
     colo = col.unc
   }else{
     colo = col.not
@@ -1666,140 +2157,114 @@ subplot.cor = function(v2, v1, xlab, ylab, line.cor, control, cex.txt = 1.3){
   mtext(side = 2, ylab, line = 2.6, cex=cex.txt*0.92, adj=0.8 )
   
   col.cor = col.axis
-  if( cor.txt[[2]]<0.1 ){
+  if( cor.txt[[2]]<0.1 & cor.txt[[4]] ){ # Statistically significant and passed robustness tests?
     col.cor = adjustcolor(col.cor, alpha.f = 2)
   } 
   
-  if( cor.txt[[3]] > 0 ){
+  if( cor.txt[[3]] > 0 ){ # Where to print the legend, depending on the sign of r
     mtext(side = 3, cor.txt[[1]], line = line.cor, cex=cex.txt-0.2, adj=0.05, font=2, col=col.cor )
   }else{
     mtext(side = 3, cor.txt[[1]], line = line.cor, cex=cex.txt-0.2, adj=0.95, font=2, col=col.cor )
   }
 }
 
-plot.rates = function(frame, line.cor=-5, season=NA){
+plot.rates = function(frame, cor.frame, line.cor=-3, season=NA){
   meanf = frame[[2]]
   ratef = frame[[1]]
   
-  x11(height = 20, width = 15)
-  par(mfrow=c(4,4), mar=c(4, 5, 1, 0.1), mgp=c(3,0.6,0))
-  
-  ## Small phy
-  subplot.cor(meanf$sat.phys, ratef$biocs, expression("Nutrient co-limitation"),
-              expression("Small phyto RCR, 10"^-2 *".d"^-1), line.cor, "BU")
-  subplot.cor(meanf$s.dw, ratef$biocs, expression("Small zoo, log mg.m"^-3),
-              '', line.cor, "TD")
-  subplot.cor(meanf$l.dw, ratef$biocs, expression("Large zoo, log mg.m"^-3),
-              '', line.cor, "TD")
-  matplot(1,1, type="n", axes=F, xlab='', ylab='')
-  
-  ## Large phy
-  subplot.cor(meanf$sat.phyl, ratef$biocl, expression("Nutrient co-limitation"),
-              expression("Large phyto RCR, 10"^-2 *".d"^-1), line.cor, "BU")
-  subplot.cor(meanf$l.dw, ratef$biocl, expression("Large zoo, log mg.m"^-3), 
-              '', line.cor, "TD")
-  matplot(1,1, type="n", axes=F, xlab='', ylab='')
-  matplot(1,1, type="n", axes=F, xlab='', ylab='')
-
-  ## Small zoo
-  subplot.cor(meanf$biocs, ratef$s.dw, expression("Small phyto, log " *mu *"gC.L"^-1), 
-              expression("Small zoo RCR, 10"^-2 *".d"^-1), line.cor, "BU")
-  subplot.cor(meanf$l.dw, ratef$s.dw, expression("Large zoo, log mg.m"^-3), 
-              '', line.cor, "TD")
-  subplot.cor(meanf$c.dw, ratef$s.dw, expression("Carn zoo, log mg.m"^-3), 
-              '', line.cor, "TD")
-  matplot(1,1, type="n", axes=F, xlab='', ylab='')
-
-  ## Large zoo
-  subplot.cor(meanf$biocs, ratef$l.dw, expression("Small phyto, log " *mu *"gC.L"^-1), 
-              expression("Large zoo RCR, 10"^-2 *".d"^-1), line.cor, "BU")
-  subplot.cor(meanf$biocl, ratef$l.dw, expression("Large phyto, log " *mu *"C.L"^-1), 
-              '', line.cor, "BU")
-  subplot.cor(meanf$s.dw, ratef$l.dw, expression("Small zoo, log mg.m"^-3), 
-              '', line.cor, "BU")
-  subplot.cor(meanf$c.dw, ratef$l.dw, expression("Carn zoo, log mg.m"^-3), 
-              '', line.cor, "TD")
-
-  ## Season label
-  par(fig=c(0,1,0,1), new=T)
-  matplot(1,1, type="n", axes=F, xlab='', ylab='', xlim=c(0,1), ylim=c(0,1))
-  mtext(side = 3, season, line = -33, cex=1.4, adj=0.83, font=2 )
-  
-  col.bu = rgb( 0.3, 0.3, 0.8, alpha = 0.5)
-  col.td = rgb( 0.9, 0.3, 0.3, alpha = 0.5)
-  col.unc = rgb(0.3, 0.3, 0.3, 0.5)
-  col.not = rgb(0.6, 0.6, 0.6, 0.3)
-  
-  legend(x=0.8, y=0.55, horiz=F, bty="n", 
-         legend=c('Top-down regulation', 'Bottom-up regulation', 'Unclear regulation', 'Not significant'),
-         pch=19, col=c(col.td, col.bu, col.unc, col.not), cex=2., pt.cex=4, 
-         x.intersp=0.7, y.intersp=1.5)
-}
-
-plot.rates(sp.rate, line.cor=-3.5, season="Spring")
-plot.rates(at.rate, line.cor=-3.5, season="Autumn")
-plot.rates(sw.rate, line.cor=-3.5, season="Summer")
-
-# Plot also with the dinoflagellates
-plot.rates.full = function(frame, line.cor=-3, season=NA){
-  meanf = frame[[2]]
-  ratef = frame[[1]]
-  
-  #x11(height = 25, width = 15)
+  x11(height = 25, width = 15)
   par(mfrow=c(5,5), mar=c(4, 5, 1, 0.1), mgp=c(3,0.6,0))
   
   ## Small phy
-  subplot.cor(meanf$sat.phys, ratef$biocs, expression("Nutrient co-limitation"),
-              expression("Small phyto RCR, 10"^-2 *".d"^-1), line.cor, "BU", cex.txt=1.2)
-  subplot.cor(meanf$dflsc, ratef$biocs, expression("Dinoflag, log " *mu*"gC.L"^-1),
+  subplot.cor(meanf$sat.phys, ratef$biocs, 
+              cor.frame, c('biocs', 'co-limitation'), # Correlation results and names of variables
+              expression("Nutrient co-limitation"),
+              expression("Small phyto RCR, 10"^-2 *".d"^-1), line.cor, "BU")
+  subplot.cor(meanf$dflsc, ratef$biocs, 
+              cor.frame, c('biocs', 'dflsc'),
+              expression("Dinoflag, log " *mu*"gC.L"^-1),
               '', line.cor, "TD", cex.txt=1.2)
-  subplot.cor(meanf$s.dw, ratef$biocs, expression("Small zoo, log mg.m"^-3),
-              '', line.cor, "TD", cex.txt=1.2)
-  subplot.cor(meanf$l.dw, ratef$biocs, expression("Large zoo, log mg.m"^-3),
-              '', line.cor, "TD", cex.txt=1.2)
+  subplot.cor(meanf$s.dw, ratef$biocs, 
+              cor.frame, c('biocs', 's.dw'), 
+              expression("Small zoo, log mg.m"^-3),
+              '', line.cor, "TD")
+  subplot.cor(meanf$l.dw, ratef$biocs, 
+              cor.frame, c('biocs', 'l.dw'), 
+              expression("Large zoo, log mg.m"^-3),
+              '', line.cor, "TD")
   matplot(1,1, type="n", axes=F, xlab='', ylab='')
   
   ## Large phy
-  subplot.cor(meanf$sat.phyl, ratef$biocl, expression("Nutrient co-limitation"),
-              expression("Large phyto RCR, 10"^-2 *".d"^-1), line.cor, "BU", cex.txt=1.2)
-  subplot.cor(meanf$l.dw, ratef$biocl, expression("Large zoo, log mg.m"^-3), 
-              '', line.cor, "TD", cex.txt=1.2)
+  subplot.cor(meanf$sat.phyl, ratef$biocl, 
+              cor.frame, c('biocl', 'co-limitation'),
+              expression("Nutrient co-limitation"),
+              expression("Large phyto RCR, 10"^-2 *".d"^-1), line.cor, "BU")
+  subplot.cor(meanf$l.dw, ratef$biocl, 
+              cor.frame, c('biocl', 'l.dw'),
+              expression("Large zoo, log mg.m"^-3), 
+              '', line.cor, "TD")
   matplot(1,1, type="n", axes=F, xlab='', ylab='')
   matplot(1,1, type="n", axes=F, xlab='', ylab='')
   matplot(1,1, type="n", axes=F, xlab='', ylab='')
   
   ## Dinoflagellates
-  subplot.cor(meanf$sat.dfls, ratef$dflsc, expression("Nutrient co-limitation"),
+  subplot.cor(meanf$sat.dfls, ratef$dflsc, 
+              cor.frame, c('dflsc', 'co-limitation'),
+              expression("Nutrient co-limitation"),
               expression("Dinoflag RCR, 10"^-2 *".d"^-1), line.cor, "BU", cex.txt=1.2)
-  subplot.cor(meanf$biocs, ratef$dflsc, expression("Small phyto, log " *mu*"gC.L"^-1),
+  subplot.cor(meanf$biocs, ratef$dflsc, 
+              cor.frame, c('dflsc', 'biocs'),
+              expression("Small phyto, log " *mu*"gC.L"^-1),
               '', line.cor, "TD", cex.txt=1.2)
-  subplot.cor(meanf$s.dw, ratef$dflsc, expression("Small zoo, log mg.m"^-3),
+  subplot.cor(meanf$s.dw, ratef$dflsc, 
+              cor.frame, c('dflsc', 's.dw'),
+              expression("Small zoo, log mg.m"^-3),
               '', line.cor, "TD", cex.txt=1.2)
-  subplot.cor(meanf$l.dw, ratef$dflsc, expression("Large zoo, log mg.m"^-3),
+  subplot.cor(meanf$l.dw, ratef$dflsc,
+              cor.frame, c('dflsc', 'l.dw'),
+              expression("Large zoo, log mg.m"^-3),
               '', line.cor, "TD", cex.txt=1.2)
   matplot(1,1, type="n", axes=F, xlab='', ylab='')
   
   ## Small zoo
-  subplot.cor(meanf$biocs, ratef$s.dw, expression("Small phyto, log " *mu *"gC.L"^-1), 
+  subplot.cor(meanf$biocs, ratef$s.dw, 
+              cor.frame, c('s.dw', 'biocs'),
+              expression("Small phyto, log " *mu *"gC.L"^-1), 
               expression("Small zoo RCR, 10"^-2 *".d"^-1), line.cor, "BU", cex.txt=1.2)
-  subplot.cor(meanf$dflsc, ratef$s.dw, expression("Dinoflag, log " *mu*"gC.L"^-1), 
+  subplot.cor(meanf$dflsc, ratef$s.dw, 
+              cor.frame, c('s.dw', 'dflsc'),
+              expression("Dinoflag, log " *mu*"gC.L"^-1), 
               '', line.cor, "BU", cex.txt=1.2)
-  subplot.cor(meanf$l.dw, ratef$s.dw, expression("Large zoo, log mg.m"^-3), 
+  subplot.cor(meanf$l.dw, ratef$s.dw, 
+              cor.frame, c('s.dw', 'l.dw'),
+              expression("Large zoo, log mg.m"^-3), 
               '', line.cor, "TD", cex.txt=1.2)
-  subplot.cor(meanf$c.dw, ratef$s.dw, expression("Carn zoo, log mg.m"^-3), 
+  subplot.cor(meanf$c.dw, ratef$s.dw, 
+              cor.frame, c('s.dw', 'c.dw'),
+              expression("Carn zoo, log mg.m"^-3), 
               '', line.cor, "TD", cex.txt=1.2)
   matplot(1,1, type="n", axes=F, xlab='', ylab='')
   
   ## Large zoo
-  subplot.cor(meanf$biocs, ratef$l.dw, expression("Small phyto, log " *mu *"gC.L"^-1), 
+  subplot.cor(meanf$biocs, ratef$l.dw, 
+              cor.frame, c('l.dw', 'biocs'),
+              expression("Small phyto, log " *mu *"gC.L"^-1), 
               expression("Large zoo RCR, 10"^-2 *".d"^-1), line.cor, "BU", cex.txt=1.2)
-  subplot.cor(meanf$biocl, ratef$l.dw, expression("Large phyto, log " *mu *"gC.L"^-1), 
+  subplot.cor(meanf$biocl, ratef$l.dw, 
+              cor.frame, c('l.dw', 'biocl'),
+              expression("Large phyto, log " *mu *"gC.L"^-1), 
               '', line.cor, "BU", cex.txt=1.2)
-  subplot.cor(meanf$dflsc, ratef$l.dw, expression("Dinoflag, log " *mu*"gC.L"^-1), 
+  subplot.cor(meanf$dflsc, ratef$l.dw, 
+              cor.frame, c('l.dw', 'dflsc'),
+              expression("Dinoflag, log " *mu*"gC.L"^-1), 
               '', line.cor, "BU", cex.txt=1.2)
-  subplot.cor(meanf$s.dw, ratef$l.dw, expression("Small zoo, log mg.m"^-3), 
+  subplot.cor(meanf$s.dw, ratef$l.dw, 
+              cor.frame, c('l.dw', 's.dw'),
+              expression("Small zoo, log mg.m"^-3), 
               '', line.cor, "BU", cex.txt=1.2)
-  subplot.cor(meanf$c.dw, ratef$l.dw, expression("Carn zoo, log mg.m"^-3), 
+  subplot.cor(meanf$c.dw, ratef$l.dw, 
+              cor.frame, c('l.dw', 'c.dw'),
+              expression("Carn zoo, log mg.m"^-3), 
               '', line.cor, "TD", cex.txt=1.2)
   
   ## Season label
@@ -1813,50 +2278,207 @@ plot.rates.full = function(frame, line.cor=-3, season=NA){
   col.not = rgb(0.6, 0.6, 0.6, 0.3)
   
   legend(x=0.82, y=0.8, horiz=F, bty="n", 
-         legend=c('Top-down regulation', 'Bottom-up regulation', 'Unclear regulation', 'Not significant'),
+         legend=c('Top-down regulation', 'Bottom-up regulation', 
+                  'Unclear regulation', 'Not robust'),
          pch=19, col=c(col.td, col.bu, col.unc, col.not), cex=2., pt.cex=4, 
          x.intersp=0.7, y.intersp=1.5)
 }
 
-plot.rates.full(sp.rate, season="Spring")
-plot.rates.full(sw.rate, season="Summer")
-plot.rates.full(at.rate, season="Autumn")
+plot.rates(sp.rate, sp.rate.corr, season="Spring")
+plot.rates(sw.rate, sw.rate.corr, season="Summer")
+plot.rates(at.rate, at.rate.corr, season="Autumn")
 
-## Show the complete correlation table (in SI)
-corr.rate = function(frame){
-  meanf = frame[[2]]
-  ratef = frame[[1]]
-  
-  var.tocheck = c("biocs", "biocl", "dflsc", "dfllc", 'n', 'p', 'lm', 'temp', 'si',
-                  's.dw', 'l.dw', 'c.dw')
-  meanf = meanf[var.tocheck]
-  ratef = ratef[var.tocheck]
-  
-  nvar = ncol(ratef) 
-  
-  p.frame = matrix( data = NA, nrow = nvar, ncol = nvar )
-  colnames(p.frame) = names(meanf) ; rownames(p.frame) = names(meanf)
+dev.copy2pdf(file='~/Summer.pdf')
+dev.off()
 
-  c.frame = matrix( data = NA, nrow = nvar, ncol = nvar )
-  colnames(c.frame) = names(meanf) ; rownames(c.frame) = names(meanf)
-
-  for( i in ( 1:nvar ) ){
-    yi = ratef[,i]
-    for( j in ( 1:nvar ) ){  # Computing Spearman's correlation by pairs
-      yj = meanf[,j]
-
-      ind = which( (!is.na(yi) & !is.na(yj)) )
-      if( length(ind)>4 ){ # At least four points
-        cr = cor.test( yi, yj, method="spearman", use = "complete.obs" )
-
-        p.frame[i, j] = cr$p.value
-        c.frame[i, j] = round( cr$estimate, 2 ) }
-    }
+# Save the data_tables of seasonal analysis
+save.seas.table = function(seas.corr, name.season){
+  for( ni in names(seas.corr) ){
+    file.name = paste('~/PhD/Work/Food web analysis - Paper 1/gits/season_tables/east/', name.season, 
+                      '_', ni, '.csv', sep='')
+    write.csv(seas.corr[[ni]], file=file.name, row.names = T)
   }
-
-  return( list(c.frame, p.frame) )
 }
 
+save.seas.table(sp.rate.corr, 'spring')
+save.seas.table(sw.rate.corr, 'summer')
+save.seas.table(at.rate.corr, 'autumn')
+
+# Correlations Light/Nutrients in spring
+n_eff_correction_p = function(x, y, lag=1){
+  # Chelton (1983) effective sample size
+  chelton.neff = function(x, y, max_lag) {
+    n = length(x)
+    if (is.null(max_lag)) max_lag = floor(n / 2)
+    max_lag = min(max_lag, n - 2)            # guard against short series
+    
+    acf.x = acf(x, lag.max = max_lag, plot = FALSE)$acf[,,1]
+    acf.y = acf(y, lag.max = max_lag, plot = FALSE)$acf[,,1]
+    
+    # Lag-0 term + both sides of the symmetric ACF
+    sum.acf = 1 +
+      2 * sum(acf.x[2:(max_lag + 1)] * acf.y[2:(max_lag + 1)])
+    
+    n.eff = n / sum.acf
+    return(max(2, min(round(n.eff), n)))     # clamp between 2 and n
+  }
+  
+  # Recompute p-value from Spearman r using n_eff degrees of freedom
+  neff.p = function(r, n.eff, n.controls = 0) {
+    df  = n.eff - 2 - n.controls             # subtract controls for partial case
+    if (df < 1) return(NA)
+    t   = r * sqrt(df / (1 - r^2))
+    p   = 2 * pt(abs(t), df = df, lower.tail = FALSE)
+    return(p)
+  }
+
+  dt = data.frame(x=x, y=y)
+  dt = na.omit(dt)
+  r = cor.test(dt$x, dt$y, method='spearman')$estimate
+  n_eff = chelton.neff(dt$x, dt$y, lag)
+  p = neff.p(r, n_eff)
+  return(c('r'=r, 'p'=p))
+}
+
+n_eff_correction_p(sp.rate[[1]]$biocs, sp.rate[[2]]$lm)
+n_eff_correction_p(sp.rate[[1]]$biocl, sp.rate[[2]]$lm)
+
+n_eff_correction_p(sp.rate[[2]]$n, sp.rate[[2]]$lm)
+n_eff_correction_p(sp.rate[[2]]$p, sp.rate[[2]]$lm)
+
+## Check the lag-correlations for BU control of zooplankton
+corr.list.bu = list('s.dw'=c('temp', 'biocs', 'dflsc'),
+                    'l.dw'=c('temp', 'biocs','biocl', 'dflsc', 's.dw'),
+                    'c.dw'=c('temp', 's.dw', 'l.dw'))
+col.zoo = list('s.dw'='orange', 'l.dw'='darkorange4', 'c.dw'='darkred')
+
+bu.lag.zoo = function(season.dt, lag.cor.max=30, wind=10, corr.to.test=corr.list.bu){
+  dt.avg = seas.avg(season.dt, wind=wind, forecast=F) # 15 days should be below the life cycle of zoplankton
+  dt.avg[ which(dt.avg == 0, arr.ind = T) ] = NA    # Smoothing reduces environmental variability
+  
+  dt.rate = rate.frames(dt.avg)
+  #dt.rate = rate.frames(season.dt)
+  
+  # Lists for output
+  corr.list   = list()
+  p.list      = list()
+  robust.list = list()
+  
+  #pred.label = 's.dw'
+  for(pred.label in names(corr.to.test)){
+    
+    # Matrix to save the data
+    corr.lag = matrix( nrow=lag.cor.max+1, ncol=length( corr.to.test[[pred.label]] ),
+                       dimnames = list( 0:lag.cor.max, corr.to.test[[pred.label]] ) )
+    
+    p.lag = matrix( nrow=lag.cor.max+1, ncol=length( corr.to.test[[pred.label]] ),
+                    dimnames = list( 0:lag.cor.max, corr.to.test[[pred.label]] ) )
+    
+    robust.lag = matrix( nrow=lag.cor.max+1, ncol=length( corr.to.test[[pred.label]] ),
+                         dimnames = list( 0:lag.cor.max, corr.to.test[[pred.label]] ) )
+    
+    for(lag_i in 0:lag.cor.max){
+      dt.pred = dt.rate[[1]][pred.label]
+      
+      date_seq = dt.rate[[1]][['date']]
+      date_lag = ymd(date_seq) - day( days(lag_i) ) # Search for the closest index and shift the times series
+      
+      dist_day = abs( outer(day(days(date_lag)), day(days(date_seq)), "-") ) # X - Y
+      ind_shuffle = apply(dist_day, 1, 'which.min')                          # Check the column with min distance
+      
+      # Check that the distance is not too big
+      dist_day = dist_day[cbind(1:nrow(dist_day), ind_shuffle)]
+      ind.not.to = dist_day >= 5 # 5 days limit
+      
+      dt.shuffled = dt.rate[[2]][ind_shuffle, corr.to.test[[pred.label]]] # Shuffle the dataset
+      dt.shuffled[ind.not.to,] = NA # Time difference too large, delete the point
+      
+      # Calculate the correlation
+      corr.df = corr.rate.partial( list(dt.pred, dt.shuffled), 
+                                   fdr.level = 0.1, max_lag = 1, 
+                                   corr.names=corr.to.test[pred.label] )
+      
+      # Save the data
+      corr.lag[lag_i+1,]   = corr.df$bivariate.r
+      p.lag[lag_i+1,]      = corr.df$bivariate.p
+      robust.lag[lag_i+1,] = corr.df$robust
+    }
+    
+    corr.list[[pred.label]]   = corr.lag
+    p.list[[pred.label]]      = p.lag
+    robust.list[[pred.label]] = robust.lag
+  
+  }
+  
+  return( list('corr'=corr.list, 'p'=p.list, 'robust'=robust.list) )
+}
+
+sp.lag.zoo = bu.lag.zoo(sp.sum, wind=15)
+sw.lag.zoo = bu.lag.zoo(sw.sum, wind=15)
+
+# Plot the lag-correlation plots
+plot.zoo.lag = function(lag.frame){
+  # Plotting arguments
+  pred_to_plot = c('s.dw', 'l.dw')
+  prey_to_plot = c('biocs', 'biocl', 'dflsc', 's.dw')
+  x.lim = c(0, nrow(lag.frame$corr[[1]])-1)
+  y.lim=c(-0.3, 0.6)
+  
+  for(prey_plot in prey_to_plot){
+    
+    matplot(c(0,1), c(0,1), xaxt='n', yaxt='n', xlab='', ylab='', type='n',
+            xlim=x.lim, ylim=y.lim)
+    
+    abline(h=0, lty=2, col='lightgray', lwd=2)
+    axis(1, at=pretty(x.lim), cex.axis=1.3, tck=0.02, cex.axis=1.4)
+    axis(2, at=pretty(y.lim), cex.axis=1.3, tck=0.02, las=1, cex.axis=1.4)
+    
+    for(pred.label in pred_to_plot){
+      if( prey_plot %in% colnames(lag.frame$corr[[pred.label]]) ){
+        lines(x.lim[1]:x.lim[2], lag.frame$corr[[pred.label]][, prey_plot], 
+              lwd=3, col=col.zoo[[pred.label]])
+        
+        # Plot the points of robust lag_correlations
+        ind.robust = which(lag.frame$robust[[pred.label]][, prey_plot])
+        points((x.lim[1]:x.lim[2])[ind.robust], 
+               lag.frame$corr[[pred.label]][, prey_plot][ind.robust], 
+               cex=2., col='white', pch=19)
+        points((x.lim[1]:x.lim[2])[ind.robust], 
+               lag.frame$corr[[pred.label]][, prey_plot][ind.robust], 
+               cex=1.3, col=col.zoo[[pred.label]], pch=19)
+        }
+    }
+    
+  }
+  
+}
+
+x11(height=15, width=7)
+par(mfcol=c(4, 1), mar = c(3, 5, 2, 1), mgp = c(3, 0.8, 0), cex=1.1, xpd=F ) # Fill by column
+plot.zoo.lag(sp.lag.zoo)
+
+# Legend
+par(fig=c(0,1,0,1), new=T, xpd=T)
+matplot(c(0,1), c(0,1), axes=F, xlab='', ylab='', type='n')
+legend('topleft', legend=c('Small zoo', 'Large zoo'), 
+       text.col=c(col.zoo$s.dw, col.zoo$l.dw), cex=1.4, 
+       pch=NA, bty='n', horiz=T,
+       x.intersp=0., inset=c(-0.04, -0.06))
+legend('topleft', legend='Robust', 
+       text.col='black', cex=1.4, pch=19, bty='n', horiz=T,
+       x.intersp=0.7, inset=c(0.6, -0.06))
+mtext(side=2, 'Correlation', cex=1.8, line=3.2)
+mtext(side=1, 'Lag with resource, days', cex=1.8, line=1.8)
+mtext(side=1, cex=1.6,
+      c('(A) small phytoplankton', '(B) large phytoplankton',
+        '(C) dinoflagellates', '(D) small zooplankton'), 
+      line=-c(37.5, 30.5, 18.5, 6.5), adj=0.03)
+      # 42.5 Sp / 37.5 Sw
+
+dev.copy2pdf(file='~/PhD/Work/Food web analysis - Paper 1/Latex/Frontiers_LaTeX_Templates/zoo_lag_summer.pdf')
+dev.off()
+
+## Show the complete correlation table (in SI)
 plot.table = function( corrdt ){
   corr = round( as.data.frame( corrdt[[1]] ), 2) # Extracting the R2 and p-values
   p = as.data.frame( corrdt[[2]] )

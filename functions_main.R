@@ -203,8 +203,8 @@ climat.env = function(data.env){
   data.env$wi = data.env$nb / data.env$tot.nb
   
   clim.comp = ddply( data.env, .(mth), summarize,
-                     dmn.qt90 = quantile( rep(dmn, times=nb), probs=0.9 ),  # Weighted quantiles
-                     dmn.qt10 = quantile( rep(dmn, times=nb), probs=0.1 ),
+                     dmn.qt90 = quantile( rep(dmn, times=nb), probs=0.9, na.rm=T ),  # Weighted quantiles
+                     dmn.qt10 = quantile( rep(dmn, times=nb), probs=0.1, na.rm=T ),
                      dmn = sum( dmn * wi, na.rm = T ) )
   return(clim.comp)} 
 
@@ -310,7 +310,7 @@ trendenv = function(listenv){
   for(i in ( 1:( length(listenv) / 2 ) ) ){ 
     data = listenv[[i]]
     
-    listenv[[i]]$trend = filter(data$dmn, filter=filter.wind, sides=2, method="convolution")
+    listenv[[i]]$trend = stats::filter(data$dmn, filter=filter.wind, sides=2, method="convolution")
   }
   return(listenv)
 }
