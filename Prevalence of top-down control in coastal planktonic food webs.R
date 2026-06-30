@@ -1005,8 +1005,6 @@ fish.lag = fish.anu |>
 
 anu.data = anu.data |> full_join(fish.lag, by = "yr")
 
-
-
 ## ----
 
 names.test = c("temp", "lm", "n", "p", "si", "biocs", "biocl", "dflsc",   
@@ -1272,9 +1270,9 @@ matplot( x = c(0, 1), y = c(0, 1), ylim = c(-1, 18), xlim = c(2013, 2024),
          xlab = "", ylab = "", axes = F )
 y.axs = (2013:2024) ; y.labs = y.axs
 y.labs[ seq(2, length(y.axs), 2) ] = NA
-x.axis = abline( v = y.labs, col = "gray80", lty = 2, lwd = 0.5 ) # Time labels
-axis( 1, at = y.axs, labels = y.labs, cex.axis = 1.5, tck = 0.02, hadj=0.1 )
-axis( 3, at = y.axs, labels = y.labs, cex.axis = 1.5, tck = 0.02, hadj=0.1 )
+x.axis = abline( v = y.labs+0.5, col = "gray80", lty = 2, lwd = 0.5 ) # Time labels
+axis( 1, at = y.axs+0.5, labels = y.labs, cex.axis = 1.5, tck = 0.02, hadj=0.1 )
+axis( 3, at = y.axs+0.5, labels = y.labs, cex.axis = 1.5, tck = 0.02, hadj=0.1 )
 
 stackl = c(0, 5, 8.4, 12, 16) # Y axis tick labels
 for(ssi in stackl){
@@ -1304,7 +1302,7 @@ smooth.lines(anu.data$yr, scale(anu.data$l.dw) +stackl[4], colo = "darkorange4",
 
 # High trophic levels
 smooth.lines(anu.data$yr, scale(anu.data$c.dw) +stackl[5], colo = "darkred", span = 0.4 )
-smooth.lines(anu.data$yr, scale(anu.data$flag) +stackl[5], span = 0.3, colo = "gray50" ) # Larvae
+smooth.lines(anu.data$yr, scale(anu.data$fish.lag) +stackl[5], span = 0.3, colo = "gray50" ) # Larvae
 
 # Text labels
 mtext( side = 2, "Normalized Log Annual Concentration", cex = 1.5, line = 1.6 )
@@ -2087,6 +2085,78 @@ corr.rate.partial = function(frame, corr.names = corr.list.names,
 sp.rate.corr = corr.rate.partial(sp.rate, fdr.level = 0.1, max_lag = 1)
 sw.rate.corr = corr.rate.partial(sw.rate, fdr.level = 0.1, max_lag = 1)
 at.rate.corr = corr.rate.partial(at.rate, fdr.level = 0.1, max_lag = 1)
+
+# Check the FDR for the whole analysis
+fdr.full = function(p.dt.list){
+  
+  p.vec.all = c()
+  dims.df   = data.frame() # Keeps all the dimensions to reshape the adjusted p-values
+  
+  for(pi.name in names(p.dt.list)){
+    #print(pi.name)
+    pi = p.dt.list[[pi.name]]
+    pi.vec = as.vector(pi)
+    #matrix(pi.vec, nrow=nrow(pi), ncol=ncol(pi), byrow=F) == pi # Check how to reshape
+    
+    p.vec.all = c(p.vec.all, pi.vec)
+    dims.df = rbind(dims.df, data.frame(table   = pi.name,
+                                        vec.len = length(pi.vec),
+                                        ncol    = ncol(pi),
+                                        nrow    = nrow(pi))
+                    )
+  }
+  
+  # Remove NAs, can inflate the fdr even more
+  ind.not.na = which(!is.na(p.vec.all))
+  
+  # FDR test
+  p.fdr = p.adjust(p.vec.all[ind.not.na], method='fdr')
+  
+  p.adjusted = rep(NA, length(p.vec.all))
+  p.adjusted[ind.not.na] = p.fdr
+  
+  # Reshape the matrices and give back the names
+  list.p.adjusted = list()
+  ind0.p.vec.all  = 1
+  indf.p.vec.all  = 0
+  
+  for(pi.name in names(p.dt.list)){
+    ind.dims = which(dims.df$table == pi.name)
+    pi.vec   = p.adjusted[ ind0.p.vec.all:(dims.df$vec.len[ind.dims] + indf.p.vec.all) ]
+    
+    ind0.p.vec.all = ind0.p.vec.all + dims.df$vec.len[ind.dims]
+    indf.p.vec.all = indf.p.vec.all + dims.df$vec.len[ind.dims]
+      
+    dt.pi = matrix(pi.vec, nrow=dims.df$nrow[ind.dims], ncol=dims.df$ncol[ind.dims], byrow=F) #
+
+    # Append new p-values
+    ind.list                    = length(list.p.adjusted)+1
+    list.p.adjusted[[ind.list]] = dt.pi
+   
+    # Fix the dimension names
+    rownames(list.p.adjusted[[ind.list]]) = rownames(p.dt.list[[pi.name]])
+    colnames(list.p.adjusted[[ind.list]]) = colnames(p.dt.list[[pi.name]])
+  }
+  
+  list.p.adjusted = setNames(list.p.adjusted, names(p.dt.list))
+  
+  return(list.p.adjusted)
+}
+
+p.frame.anu[row(p.frame.anu)==col(p.frame.anu)] = NA # Remove diagonal correlations, BH sensitive to # of tests
+p.inv.frame.anu[row(p.inv.frame.anu)==col(p.inv.frame.anu)] = NA
+rate.p.full = list('spring' = sp.rate.corr$bivariate.p, 
+                   'summer' = sw.rate.corr$bivariate.p,
+                   #'autumn' = at.rate.corr$bivariate.p,
+                   'anu.bu' = p.frame.anu,
+                   'anu.td' = p.inv.frame.anu)
+fdr.all = fdr.full(rate.p.full)
+
+p.frame = p.frame.anu
+p.frame[row(p.frame)==col(p.frame)] = NA
+p.frame[row(p.frame)<col(p.frame)]  = p.inv.frame.anu[row(p.frame)<col(p.frame)]
+rate.p.full = list('anu' = p.frame)
+fdr.all = fdr.full(rate.p.full)
 
 get.cor = function(cor.frame, cor.variables){
   # Get correlations and p.values
