@@ -18,16 +18,14 @@ library(splines)
 source('functions_main.R')
 
 #### Phytoplankton data
-stationf = read.csv("High-relevance-of-top-down-control-in-coastal-planktonic-food-webs-datasets/Phytoplankton_NLWKN.csv",
-                    skip=4)
+stationf = read.csv("datasets/Phytoplankton_NLWKN.csv", skip=4)
 
 #### Mixotrophs data
-dino.ess = read.csv("High-relevance-of-top-down-control-in-coastal-planktonic-food-webs-datasets/Mixotrophs_NLWKN.csv",
-                    skip=4)
+dino.ess = read.csv("datasets/Mixotrophs_NLWKN.csv", skip=4)
 dino.ess = dino.ess[-which(dino.ess$bioC==0),] # Remove the taxa absent from the samples
 
 #### Fish landings data
-datah = read.csv("High-relevance-of-top-down-control-in-coastal-planktonic-food-webs-datasets/fishlandings.csv", skip=4, header=T) # Extracting the dataset
+datah = read.csv("datasets/fishlandings.csv", skip=4, header=T) # Extracting the dataset
 planktinames = c( "Hering" ) # Focus on Herring
 
 dataf = fish.approx(datah, planktinames) # Herring
@@ -40,7 +38,7 @@ dataf = dataf[ind, ] # There are not much data before 2013
 dataf$date = ymd( paste( dataf$year, "-", dataf$month, "-15", sep = "" ) )
 
 #### Zoo data
-data = read.csv("High-relevance-of-top-down-control-in-coastal-planktonic-food-webs-datasets/Zooplankton_NLWKN.csv",
+data = read.csv("datasets/Zooplankton_NLWKN.csv",
                 skip=4)
 data$Date = ymd( data$Date )
 
@@ -49,17 +47,14 @@ data.ops = data[ -which( is.na(data$ops) ), ]
 data$ops.alt = NA
 
 ## Environmental forcing data (Nutrients, Temperature, Salinity)
-waddenEnvtot = read.table("High-relevance-of-top-down-control-in-coastal-planktonic-food-webs-datasets/Environment.csv", header = TRUE, sep=",",
-                          skip=4)
-solar.data = read.table("High-relevance-of-top-down-control-in-coastal-planktonic-food-webs-datasets/Surface_irradiance.csv", header = TRUE, sep=",",
-                        skip=8)
+waddenEnvtot = read.table("datasets/Environment.csv", header = TRUE, sep=",", skip=4)
+solar.data = read.table("datasets/Surface_irradiance.csv", header = TRUE, sep=",", skip=8)
 waddenEnvtot = merge(waddenEnvtot, solar.data[c('USI', 'I0')], by='USI')
 waddenEnvtot = waddenEnvtot[ which( waddenEnvtot$StationID %in% unique(stationf$stationID) | waddenEnvtot$StationID %in% unique(data$Station) ), ] # Remove stations where no plankton information
 statin = waddenEnvtot$StationID
 
 #### Test: select only a region of the Wadden Sea
-# station.coord = read.csv('~/PhD/Work/Food web analysis - Paper 1/Fixing code/Stations.csv',
-#                          header=T)
+# station.coord = read.csv('datasets/Stations.csv', header=T)
 # 
 # #Kmeans clustering of groups
 # #clust.groups = kmeans(station.coord[c('N', 'E')], 2)$cluster
