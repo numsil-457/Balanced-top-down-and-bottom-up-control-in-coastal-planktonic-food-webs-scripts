@@ -929,84 +929,6 @@ anu.data.mean = build_anu_df('mean')
 anu.data.sum  = build_anu_df('sum')
 ## ----
 
-## Annual means using monthly series ----
-n.anu = ddply(n.series, .(yr), summarize, nm = mean( dmn, na.rm = T ) )
-p.anu = ddply(p.series, .(yr), summarize, pm = mean( dmn, na.rm = T ) )
-si.anu = ddply(si.series, .(yr), summarize, sim = mean( dmn, na.rm = T ) )
-spm.anu = ddply(spm.series, .(yr), summarize, spm = mean( dmn, na.rm = T ) )
-sal.anu = ddply(sal.series, .(yr), summarize, sal = mean( dmn, na.rm = T ) )
-l.anu = ddply(rad, .(yr), summarize, l = mean( lm, na.rm = T ) )
-t.anu = ddply(t.series, .(yr), summarize, tm = mean( dmn, na.rm = T ) )
-
-phytos.anu = ddply(physm, .(yr), summarize, 
-                  biocs = mean( log( bioc ), na.rm = T ),
-                  #biocs = mean( bioc, na.rm = T ),
-                  esd.phys = mean( log( (vol * 3/4/pi)**(1/3)*2 ) ) )
-phytol.anu = ddply(phylm, .(yr), summarize, 
-                   biocl = mean( log( bioc ), na.rm = T ),
-                   #biocl = mean(bioc, na.rm = T ),
-                   esd.phyl = mean( log( (vol * 3/4/pi)**(1/3)*2 ) ) )
-phytall.anu = ddply(phyallm, .(yr), summarize, 
-                    biocl = mean( log( bioc ), na.rm = T ),
-                    esd.phyl = mean( log( (vol * 3/4/pi)**(1/3)*2 ) ) )
-
-dfls.anu = ddply(dflsm, .(yr), summarize, 
-                 dflcs = mean( log( bioc +1), na.rm = T ),
-                 #dflcs = mean( bioc, na.rm = T ),
-                 esd.dfls = mean( log( (vol * 3/4/pi)**(1/3)*2 ) ) )
-dfll.anu = ddply(dfllm, .(yr), summarize, 
-                 dflcl = mean( log( bioc +1), na.rm = T ),
-                 #dflcl = mean( bioc, na.rm = T ),
-                 esd.dfll = mean( log( (vol * 3/4/pi)**(1/3)*2 ) ) )
-
-zoos.anu = ddply(zoosm, .(yr), summarize, 
-                 dws = mean( log( dw +1), na.rm=T),
-                 #dws = mean( dw, na.rm=T),
-                 esds = mean( log( (sze * 3/4/pi)**(1/3)*2 ), na.rm = T) )
-zool.anu = ddply(zoolm, .(yr), summarize, 
-                 dwl = mean( log( dw +1), na.rm=T),
-                 #dwl = mean( dw, na.rm=T),
-                 esdl = mean( log( (sze * 3/4/pi)**(1/3)*2 ), na.rm = T) )
-ind.remove = which(zoocm$yr > 2015) # Extreme point first year 
-zooc.anu = ddply(zoocm[ind.remove,], .(yr), summarize, 
-                 dwc = mean( log( dw +1), na.rm=T),
-                 #dwc = mean( dw, na.rm=T),
-                 esdc = mean( log( (sze * 3/4/pi)**(1/3)*2 ), na.rm = T) )
-
-fish.anu = ddply( dataf, .(year), summarize, 
-                  ft = mean( log(t +1), na.rm = T ) )
-## ----
-
-## Building the complete annual dataset ----
-anu.data = list(
-  phytos.anu,
-  phytol.anu  |> select(yr, biocl, esd.phyl),
-  phytall.anu |> rename(bioca = biocl, esd.phya = esd.phyl) |> select(yr, bioca, esd.phya),
-  dfll.anu    |> rename(dfllc = dflcl) |> select(yr, dfllc, esd.dfll),
-  dfls.anu    |> rename(dflsc = dflcs) |> select(yr, dflsc, esd.dfls),
-  t.anu       |> rename(temp = tm)     |> select(yr, temp),
-  n.anu       |> rename(n = nm)        |> select(yr, n),
-  p.anu       |> rename(p = pm)        |> select(yr, p),
-  si.anu      |> rename(si = sim)      |> select(yr, si),
-  spm.anu     |>                          select(yr, spm),
-  sal.anu     |>                          select(yr, sal),
-  l.anu       |> rename(lm = l)        |> select(yr, lm),
-  zoos.anu    |> rename(s.dw = dws, esds = esds) |> select(yr, s.dw, esds),
-  zool.anu    |> rename(l.dw = dwl, esdl = esdl) |> select(yr, l.dw, esdl),
-  zooc.anu    |> rename(c.dw = dwc, esdc = esdc) |> select(yr, c.dw, esdc),
-  fish.anu    |> rename(yr = year, fish = ft)     |> select(yr, fish)
-) |> reduce(full_join, by = "yr")
-
-# --- Fish with one year lag (added separately as it shifts the yr key) ---
-fish.lag = fish.anu |>
-  rename(fish.lag = ft) |>  
-  mutate(yr = year + 1)  |>
-  select(yr, fish.lag)
-
-anu.data = anu.data |> full_join(fish.lag, by = "yr")
-
-## ----
-
 names.test = c("temp", "lm", "n", "p", "si", "biocs", "biocl", "dflsc",   
                "s.dw", "l.dw", "c.dw", "fish", "fish.lag")
 
@@ -1181,21 +1103,13 @@ BU_TD_matrix = function(dt, dtinv){ # Old
   return(dt.f)
 }
 
-# BU_TD_matrix = function(dt, dtinv){
-#   dt = as.data.frame(dt); dtinv = as.data.frame(dtinv)
-#   dt$control    = 'Bottom-up'
-#   dt$var        = rownames(dt)
-#   dtinv$control = 'Top-down'
-#   dtinv$var        = rownames(dtinv)
-#   return( rbind(dtinv, dt) )
-# }
-
-write.csv( BU_TD_matrix(cor.frame.anu, cor.inv.frame.anu), file='~/PhD/Work/Food web analysis - Paper 1/gits/cor_annual.csv', row.names=F)
-write.csv( BU_TD_matrix(p.frame.anu, p.inv.frame.anu), file='~/PhD/Work/Food web analysis - Paper 1/gits/p_annual.csv', row.names=F)
-write.csv( BU_TD_matrix(ci.frame.anu, ci.inv.frame.anu), file='~/PhD/Work/Food web analysis - Paper 1/gits/ci_annual.csv', row.names=F)
-write.csv( BU_TD_matrix(loo.frame.anu, loo.inv.frame.anu), file='~/PhD/Work/Food web analysis - Paper 1/gits/loo_annual.csv', row.names=F)
-write.csv( BU_TD_matrix(n.frame.anu, n.inv.frame.anu), file='~/PhD/Work/Food web analysis - Paper 1/gits/n_annual.csv', row.names=F)
-write.csv( BU_TD_matrix(n_eff.frame.anu, n_eff.inv.frame.anu), file='~/PhD/Work/Food web analysis - Paper 1/gits/neff_annual.csv', row.names=F)
+# Making clean data frames
+BU_TD_matrix(cor.frame.anu, cor.inv.frame.anu)     # Correlations
+BU_TD_matrix(p.frame.anu, p.inv.frame.anu)         # p-values
+BU_TD_matrix(ci.frame.anu, ci.inv.frame.anu)       # Confidence intervals
+BU_TD_matrix(loo.frame.anu, loo.inv.frame.anu)     # Robustness against Leave-One-Out test
+BU_TD_matrix(n.frame.anu, n.inv.frame.anu)         # n number of points
+BU_TD_matrix(n_eff.frame.anu, n_eff.inv.frame.anu) # number of points after correction for autocorrelation (Chelton, 1983)
 
 # Correlations on annual means (spearman) are available in cor.frame.anu
 # The p-values are in p.frame.anu
@@ -1238,9 +1152,6 @@ plot.table.anu = function( cor.frame.anu, cor.inv.frame.anu, p.frame.anu, p.inv.
 }
 
 corr.anu.f = plot.table.anu( cor.frame.anu, cor.inv.frame.anu, p.frame.anu, p.inv.frame.anu )
-
-dev.copy2pdf(file='~/anu_corr_west.pdf')
-dev.off()
 
 ### Annual time series ----
 smooth.lines = function(points, data, colo, span=0.05, points.p = T ){
@@ -2358,21 +2269,17 @@ plot.rates(sp.rate, sp.rate.corr, season="Spring")
 plot.rates(sw.rate, sw.rate.corr, season="Summer")
 plot.rates(at.rate, at.rate.corr, season="Autumn")
 
-dev.copy2pdf(file='~/Summer.pdf')
-dev.off()
-
 # Save the data_tables of seasonal analysis
-save.seas.table = function(seas.corr, name.season){
-  for( ni in names(seas.corr) ){
-    file.name = paste('~/PhD/Work/Food web analysis - Paper 1/gits/season_tables/east/', name.season, 
-                      '_', ni, '.csv', sep='')
-    write.csv(seas.corr[[ni]], file=file.name, row.names = T)
-  }
-}
-
-save.seas.table(sp.rate.corr, 'spring')
-save.seas.table(sw.rate.corr, 'summer')
-save.seas.table(at.rate.corr, 'autumn')
+# save.seas.table = function(seas.corr, name.season){
+#   for( ni in names(seas.corr) ){
+#     file.name = NA
+#     write.csv(seas.corr[[ni]], file=file.name, row.names = T)
+#   }
+# }
+# 
+# save.seas.table(sp.rate.corr, 'spring')
+# save.seas.table(sw.rate.corr, 'summer')
+# save.seas.table(at.rate.corr, 'autumn')
 
 # Correlations Light/Nutrients in spring
 n_eff_correction_p = function(x, y, lag=1){
@@ -2525,7 +2432,8 @@ plot.zoo.lag = function(lag.frame){
 
 x11(height=15, width=7)
 par(mfcol=c(4, 1), mar = c(3, 5, 2, 1), mgp = c(3, 0.8, 0), cex=1.1, xpd=F ) # Fill by column
-plot.zoo.lag(sp.lag.zoo)
+
+plot.zoo.lag(sp.lag.zoo) # Choose the season to plot
 
 # Legend
 par(fig=c(0,1,0,1), new=T, xpd=T)
@@ -2543,10 +2451,6 @@ mtext(side=1, cex=1.6,
       c('(A) small phytoplankton', '(B) large phytoplankton',
         '(C) dinoflagellates', '(D) small zooplankton'), 
       line=-c(37.5, 30.5, 18.5, 6.5), adj=0.03)
-      # 42.5 Sp / 37.5 Sw
-
-dev.copy2pdf(file='~/PhD/Work/Food web analysis - Paper 1/Latex/Frontiers_LaTeX_Templates/zoo_lag_summer.pdf')
-dev.off()
 
 ## Show the complete correlation table (in SI)
 plot.table = function( corrdt ){
